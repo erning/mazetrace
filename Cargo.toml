@@ -1,0 +1,13 @@
+[package]
+name = "mazetrace"
+version = "0.1.0"
+edition = "2021"
+description = "Animated terminal maze generation and exploration."
+license = "MIT"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+crossterm = "0.28"
+rand = "0.8"
+ratatui = "0.28"
+
