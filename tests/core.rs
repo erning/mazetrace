@@ -24,12 +24,13 @@ fn generator_completes_and_opens_entrance_and_exit() {
         GeneratorAlgorithm::Prim,
         GeneratorAlgorithm::Kruskal,
         GeneratorAlgorithm::AldousBroder,
+        GeneratorAlgorithm::Wilson,
         GeneratorAlgorithm::RecursiveDivision,
     ] {
         let mut maze = Maze::new(6, 5);
         let mut generator = MazeGenerator::with_algorithm(&maze, algorithm, 42);
 
-        for _ in 0..(maze.len() * 500) {
+        for _ in 0..(maze.len() * 2_000) {
             if generator.status() == GenerationStatus::Done {
                 break;
             }

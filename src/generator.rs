@@ -43,6 +43,7 @@ enum GeneratorState {
     Prim(PrimGenerator),
     Kruskal(KruskalGenerator),
     AldousBroder(AldousBroderGenerator),
+    Wilson(WilsonGenerator),
     RecursiveDivision(RecursiveDivisionGenerator),
 }
 
@@ -61,6 +62,7 @@ impl MazeGenerator {
             GeneratorAlgorithm::AldousBroder => {
                 GeneratorState::AldousBroder(AldousBroderGenerator::new(maze, seed))
             }
+            GeneratorAlgorithm::Wilson => GeneratorState::Wilson(WilsonGenerator::new(maze, seed)),
             GeneratorAlgorithm::RecursiveDivision => {
                 GeneratorState::RecursiveDivision(RecursiveDivisionGenerator::new(maze, seed))
             }
@@ -79,6 +81,7 @@ impl MazeGenerator {
             GeneratorState::Prim(state) => state.current,
             GeneratorState::Kruskal(state) => state.current,
             GeneratorState::AldousBroder(state) => state.current,
+            GeneratorState::Wilson(state) => state.current,
             GeneratorState::RecursiveDivision(state) => state.current,
         }
     }
@@ -89,6 +92,7 @@ impl MazeGenerator {
             GeneratorState::Prim(state) => state.step_count,
             GeneratorState::Kruskal(state) => state.step_count,
             GeneratorState::AldousBroder(state) => state.step_count,
+            GeneratorState::Wilson(state) => state.step_count,
             GeneratorState::RecursiveDivision(state) => state.step_count,
         }
     }
@@ -99,6 +103,7 @@ impl MazeGenerator {
             GeneratorState::Prim(state) => state.status,
             GeneratorState::Kruskal(state) => state.status,
             GeneratorState::AldousBroder(state) => state.status,
+            GeneratorState::Wilson(state) => state.status,
             GeneratorState::RecursiveDivision(state) => state.status,
         }
     }
@@ -113,6 +118,7 @@ impl MazeGenerator {
             GeneratorState::Prim(state) => state.last_event,
             GeneratorState::Kruskal(state) => state.last_event,
             GeneratorState::AldousBroder(state) => state.last_event,
+            GeneratorState::Wilson(state) => state.last_event,
             GeneratorState::RecursiveDivision(state) => state.last_event,
         }
     }
@@ -123,6 +129,7 @@ impl MazeGenerator {
             GeneratorState::Prim(state) => state.visited[maze.index(pos)],
             GeneratorState::Kruskal(state) => state.touched[maze.index(pos)],
             GeneratorState::AldousBroder(state) => state.visited[maze.index(pos)],
+            GeneratorState::Wilson(state) => state.in_tree[maze.index(pos)],
             GeneratorState::RecursiveDivision(state) => state.touched[maze.index(pos)],
         }
     }
@@ -133,6 +140,7 @@ impl MazeGenerator {
             GeneratorState::Prim(state) => state.step(maze),
             GeneratorState::Kruskal(state) => state.step(maze),
             GeneratorState::AldousBroder(state) => state.step(maze),
+            GeneratorState::Wilson(state) => state.step(maze),
             GeneratorState::RecursiveDivision(state) => state.step(maze),
         }
     }
@@ -426,6 +434,180 @@ impl AldousBroderGenerator {
         }
 
         self.last_event
+    }
+}
+
+#[derive(Clone, Debug)]
+struct WilsonGenerator {
+    current: Pos,
+    in_tree: Vec<bool>,
+    tree_count: usize,
+    walk: Vec<Pos>,
+    walk_indices: Vec<Option<usize>>,
+    pending_path: Vec<Pos>,
+    pending_index: usize,
+    step_count: usize,
+    status: GenerationStatus,
+    last_event: GenerationEvent,
+    rng: StdRng,
+}
+
+impl WilsonGenerator {
+    fn new(maze: &Maze, seed: u64) -> Self {
+        let current = maze.start();
+        let mut in_tree = vec![false; maze.len()];
+        in_tree[maze.index(current)] = true;
+
+        Self {
+            current,
+            in_tree,
+            tree_count: 1,
+            walk: Vec::new(),
+            walk_indices: vec![None; maze.len()],
+            pending_path: Vec::new(),
+            pending_index: 0,
+            step_count: 0,
+            status: GenerationStatus::Running,
+            last_event: GenerationEvent::Visit(current),
+            rng: StdRng::seed_from_u64(seed),
+        }
+    }
+
+    fn step(&mut self, maze: &mut Maze) -> GenerationEvent {
+        if self.status == GenerationStatus::Done {
+            return GenerationEvent::Done;
+        }
+
+        if self.tree_count == maze.len() {
+            finish_generation(maze, &mut self.status, &mut self.last_event);
+            return self.last_event;
+        }
+
+        if self.has_pending_carve() {
+            return self.carve_pending_path(maze);
+        }
+
+        if self.walk.is_empty() {
+            return self.start_walk(maze);
+        }
+
+        self.advance_walk(maze)
+    }
+
+    fn has_pending_carve(&self) -> bool {
+        self.pending_index + 1 < self.pending_path.len()
+    }
+
+    fn carve_pending_path(&mut self, maze: &mut Maze) -> GenerationEvent {
+        let from = self.pending_path[self.pending_index];
+        let to = self.pending_path[self.pending_index + 1];
+        let direction = maze
+            .carve_between(from, to)
+            .expect("Wilson pending path contains adjacent cells");
+
+        self.mark_in_tree(maze, from);
+        self.mark_in_tree(maze, to);
+        self.current = to;
+        self.pending_index += 1;
+        self.step_count += 1;
+        self.last_event = GenerationEvent::Carve {
+            from,
+            to,
+            direction,
+        };
+
+        if !self.has_pending_carve() {
+            self.pending_path.clear();
+            self.pending_index = 0;
+
+            if self.tree_count == maze.len() {
+                maze.open_entrance_exit();
+                self.status = GenerationStatus::Done;
+            }
+        }
+
+        self.last_event
+    }
+
+    fn start_walk(&mut self, maze: &Maze) -> GenerationEvent {
+        let Some(start) = self.random_unvisited(maze) else {
+            self.status = GenerationStatus::Done;
+            self.last_event = GenerationEvent::Done;
+            return self.last_event;
+        };
+
+        self.current = start;
+        self.walk.push(start);
+        self.walk_indices[maze.index(start)] = Some(0);
+        self.step_count += 1;
+        self.last_event = GenerationEvent::Visit(start);
+        self.last_event
+    }
+
+    fn advance_walk(&mut self, maze: &Maze) -> GenerationEvent {
+        let from = *self
+            .walk
+            .last()
+            .expect("Wilson walk is initialized before advancing");
+        let neighbors: Vec<Pos> = maze.neighbors(from).map(|(_, pos)| pos).collect();
+        let Some(next) = neighbors.choose(&mut self.rng).copied() else {
+            self.last_event = GenerationEvent::Done;
+            return self.last_event;
+        };
+
+        self.current = next;
+        self.step_count += 1;
+
+        if self.in_tree[maze.index(next)] {
+            self.pending_path = self.walk.clone();
+            self.pending_path.push(next);
+            self.clear_walk_indices(maze);
+            self.walk.clear();
+            self.last_event = GenerationEvent::Visit(next);
+            return self.last_event;
+        }
+
+        if let Some(loop_start) = self.walk_indices[maze.index(next)] {
+            self.erase_walk_loop(maze, loop_start);
+        } else {
+            self.walk_indices[maze.index(next)] = Some(self.walk.len());
+            self.walk.push(next);
+        }
+
+        self.last_event = GenerationEvent::Visit(next);
+        self.last_event
+    }
+
+    fn random_unvisited(&mut self, maze: &Maze) -> Option<Pos> {
+        let unvisited: Vec<usize> = self
+            .in_tree
+            .iter()
+            .enumerate()
+            .filter_map(|(index, in_tree)| (!in_tree).then_some(index))
+            .collect();
+        unvisited
+            .choose(&mut self.rng)
+            .map(|index| Pos::new(index / maze.width(), index % maze.width()))
+    }
+
+    fn erase_walk_loop(&mut self, maze: &Maze, loop_start: usize) {
+        for pos in self.walk.drain(loop_start + 1..) {
+            self.walk_indices[maze.index(pos)] = None;
+        }
+    }
+
+    fn clear_walk_indices(&mut self, maze: &Maze) {
+        for pos in &self.walk {
+            self.walk_indices[maze.index(*pos)] = None;
+        }
+    }
+
+    fn mark_in_tree(&mut self, maze: &Maze, pos: Pos) {
+        let index = maze.index(pos);
+        if !self.in_tree[index] {
+            self.in_tree[index] = true;
+            self.tree_count += 1;
+        }
     }
 }
 

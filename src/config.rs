@@ -46,6 +46,7 @@ pub enum GeneratorAlgorithm {
     Prim,
     Kruskal,
     AldousBroder,
+    Wilson,
     RecursiveDivision,
 }
 
@@ -66,6 +67,7 @@ impl GeneratorAlgorithm {
             GeneratorAlgorithm::Prim => "Prim",
             GeneratorAlgorithm::Kruskal => "Kruskal",
             GeneratorAlgorithm::AldousBroder => "Aldous-Broder",
+            GeneratorAlgorithm::Wilson => "Wilson",
             GeneratorAlgorithm::RecursiveDivision => "Recursive Division",
         }
     }
