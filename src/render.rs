@@ -362,3 +362,36 @@ fn junction_char(up: bool, right: bool, down: bool, left: bool, ascii: bool) -> 
         (false, true, false, false) | (false, false, false, true) => '─',
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_size_matches_cell_spacing() {
+        assert_eq!(render_size(1, 1), (5, 3));
+        assert_eq!(render_size(3, 2), (13, 5));
+    }
+
+    #[test]
+    fn junction_char_uses_ascii_fallback() {
+        assert_eq!(junction_char(true, true, false, false, true), '+');
+        assert_eq!(junction_char(false, false, false, false, true), ' ');
+    }
+
+    #[test]
+    fn path_connector_char_connects_corners_and_ascii() {
+        assert_eq!(
+            path_connector_char(Some(Direction::North), Some(Direction::East), false),
+            '╚'
+        );
+        assert_eq!(
+            path_connector_char(Some(Direction::West), Some(Direction::South), false),
+            '╗'
+        );
+        assert_eq!(
+            path_connector_char(Some(Direction::North), Some(Direction::East), true),
+            '+'
+        );
+    }
+}

@@ -202,3 +202,47 @@ impl Maze {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn direction_between_detects_adjacent_cells() {
+        let maze = Maze::new(3, 3);
+        let center = Pos::new(1, 1);
+
+        assert_eq!(
+            maze.direction_between(center, Pos::new(0, 1)),
+            Some(Direction::North)
+        );
+        assert_eq!(
+            maze.direction_between(center, Pos::new(1, 2)),
+            Some(Direction::East)
+        );
+        assert_eq!(
+            maze.direction_between(center, Pos::new(2, 1)),
+            Some(Direction::South)
+        );
+        assert_eq!(
+            maze.direction_between(center, Pos::new(1, 0)),
+            Some(Direction::West)
+        );
+        assert_eq!(maze.direction_between(center, Pos::new(2, 2)), None);
+    }
+
+    #[test]
+    fn wall_updates_are_symmetric() {
+        let mut maze = Maze::new(2, 1);
+        let left = Pos::new(0, 0);
+        let right = Pos::new(0, 1);
+
+        maze.carve_between(left, right);
+        assert!(!maze.has_wall(left, Direction::East));
+        assert!(!maze.has_wall(right, Direction::West));
+
+        maze.add_wall_between(left, right);
+        assert!(maze.has_wall(left, Direction::East));
+        assert!(maze.has_wall(right, Direction::West));
+    }
+}

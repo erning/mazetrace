@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use rand::random;
 
 use crate::config::{Config, GeneratorAlgorithm, SolverAlgorithm};
@@ -196,6 +196,12 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
+        {
+            return true;
+        }
+
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => return true,
             KeyCode::Char(' ') => {

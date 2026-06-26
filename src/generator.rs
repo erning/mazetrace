@@ -864,3 +864,23 @@ fn finish_generation(
     *status = GenerationStatus::Done;
     *last_event = GenerationEvent::Done;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disjoint_set_unions_components_once() {
+        let mut disjoint_set = DisjointSet::new(4);
+
+        assert!(disjoint_set.union(0, 1));
+        assert!(disjoint_set.union(2, 3));
+        assert!(disjoint_set.union(1, 2));
+        assert!(!disjoint_set.union(0, 3));
+
+        let root = disjoint_set.find(0);
+        assert_eq!(disjoint_set.find(1), root);
+        assert_eq!(disjoint_set.find(2), root);
+        assert_eq!(disjoint_set.find(3), root);
+    }
+}

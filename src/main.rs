@@ -2,6 +2,7 @@ use std::io;
 use std::time::Duration;
 
 use clap::Parser;
+use crossterm::cursor::Show;
 use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -21,20 +22,45 @@ fn main() {
 
 fn run() -> io::Result<()> {
     let config = Config::parse();
-    enable_raw_mode()?;
+    let _terminal_session = TerminalSession::enter()?;
 
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-
+    let stdout = io::stdout();
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    let result = run_app(&mut terminal, config);
 
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    run_app(&mut terminal, config)
+}
 
-    result
+struct TerminalSession {
+    raw_mode_enabled: bool,
+    alternate_screen_entered: bool,
+}
+
+impl TerminalSession {
+    fn enter() -> io::Result<Self> {
+        enable_raw_mode()?;
+
+        let mut session = Self {
+            raw_mode_enabled: true,
+            alternate_screen_entered: false,
+        };
+        execute!(io::stdout(), EnterAlternateScreen)?;
+        session.alternate_screen_entered = true;
+
+        Ok(session)
+    }
+}
+
+impl Drop for TerminalSession {
+    fn drop(&mut self) {
+        if self.alternate_screen_entered {
+            let _ = execute!(io::stdout(), LeaveAlternateScreen, Show);
+        }
+
+        if self.raw_mode_enabled {
+            let _ = disable_raw_mode();
+        }
+    }
 }
 
 fn run_app(

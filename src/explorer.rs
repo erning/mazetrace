@@ -527,3 +527,32 @@ const fn direction_index(direction: Direction) -> usize {
         Direction::West => 3,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simplify_trail_removes_loops() {
+        let trail = [
+            Pos::new(0, 0),
+            Pos::new(0, 1),
+            Pos::new(1, 1),
+            Pos::new(0, 1),
+            Pos::new(0, 2),
+        ];
+
+        assert_eq!(
+            simplify_trail(&trail),
+            vec![Pos::new(0, 0), Pos::new(0, 1), Pos::new(0, 2)]
+        );
+    }
+
+    #[test]
+    fn wall_follower_fails_when_start_is_sealed() {
+        let maze = Maze::new(2, 2);
+        let steps = plan_wall_follower(&maze);
+
+        assert!(matches!(steps.last(), Some(SolverStep::Failed)));
+    }
+}
