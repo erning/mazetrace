@@ -1,4 +1,5 @@
-use std::collections::VecDeque;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, VecDeque};
 
 use crate::config::SolverAlgorithm;
 use crate::maze::{Direction, Maze, Pos};
@@ -236,50 +237,54 @@ fn plan_bfs(maze: &Maze) -> Vec<SolverStep> {
 }
 
 fn plan_astar(maze: &Maze) -> Vec<SolverStep> {
+    // Min-heap keyed by (f, h, insertion_order, pos) where f = g + manhattan(h).
+    // Popping the smallest f expands cells goal-first, turning the previous O(V^2)
+    // linear scan into O(E log V). The insertion_order tiebreak keeps equal-priority
+    // cells in FIFO order so the animation matches the old planner exactly.
     let mut steps = Vec::new();
-    let mut open = vec![maze.start()];
     let mut closed = vec![false; maze.len()];
     let mut best_cost = vec![usize::MAX; maze.len()];
     let mut parent = vec![None; maze.len()];
-    best_cost[maze.index(maze.start())] = 0;
+    let mut sequence = 0usize;
 
-    while !open.is_empty() {
-        let best_index = (0..open.len())
-            .min_by_key(|index| {
-                let pos = open[*index];
-                let cost = best_cost[maze.index(pos)];
-                (
-                    cost + manhattan(pos, maze.exit()),
-                    manhattan(pos, maze.exit()),
-                )
-            })
-            .expect("open set is not empty");
-        let current = open.swap_remove(best_index);
+    let start = maze.start();
+    let exit = maze.exit();
+    best_cost[maze.index(start)] = 0;
+
+    let start_h = manhattan(start, exit);
+    let mut open: BinaryHeap<Reverse<(usize, usize, usize, Pos)>> = BinaryHeap::new();
+    open.push(Reverse((start_h, start_h, sequence, start)));
+    sequence += 1;
+
+    while let Some(Reverse((_, _, _, current))) = open.pop() {
         let current_index = maze.index(current);
 
         if closed[current_index] {
             continue;
         }
-
         closed[current_index] = true;
-        if current != maze.start() {
+
+        if current != start {
             steps.push(SolverStep::Visit(current));
         }
 
-        if current == maze.exit() {
+        if current == exit {
             push_solution(maze, &parent, &mut steps);
             return steps;
         }
 
+        let tentative = best_cost[current_index] + 1;
         for (_, next) in maze.reachable_neighbors(current) {
             let next_index = maze.index(next);
-            let tentative = best_cost[current_index] + 1;
-
-            if tentative < best_cost[next_index] {
-                best_cost[next_index] = tentative;
-                parent[next_index] = Some(current);
-                open.push(next);
+            if closed[next_index] || tentative >= best_cost[next_index] {
+                continue;
             }
+
+            best_cost[next_index] = tentative;
+            parent[next_index] = Some(current);
+            let h = manhattan(next, exit);
+            open.push(Reverse((tentative + h, h, sequence, next)));
+            sequence += 1;
         }
     }
 
@@ -288,26 +293,32 @@ fn plan_astar(maze: &Maze) -> Vec<SolverStep> {
 }
 
 fn plan_dijkstra(maze: &Maze) -> Vec<SolverStep> {
+    // Min-heap keyed by (distance, insertion_order, pos). Popping the closest
+    // unsettled cell turns the previous O(V^2) linear scan into O(E log V). The
+    // insertion_order tiebreak keeps equal-distance cells in FIFO order so the
+    // animation matches the old planner exactly.
     let mut steps = Vec::new();
-    let mut open = vec![maze.start()];
     let mut settled = vec![false; maze.len()];
     let mut distance = vec![usize::MAX; maze.len()];
     let mut parent = vec![None; maze.len()];
-    distance[maze.index(maze.start())] = 0;
+    let mut sequence = 0usize;
 
-    while !open.is_empty() {
-        let best_index = (0..open.len())
-            .min_by_key(|index| distance[maze.index(open[*index])])
-            .expect("open set is not empty");
-        let current = open.swap_remove(best_index);
+    let start = maze.start();
+    distance[maze.index(start)] = 0;
+
+    let mut open: BinaryHeap<Reverse<(usize, usize, Pos)>> = BinaryHeap::new();
+    open.push(Reverse((0, sequence, start)));
+    sequence += 1;
+
+    while let Some(Reverse((cost, _, current))) = open.pop() {
         let current_index = maze.index(current);
 
         if settled[current_index] {
             continue;
         }
-
         settled[current_index] = true;
-        if current != maze.start() {
+
+        if current != start {
             steps.push(SolverStep::Visit(current));
         }
 
@@ -316,15 +327,17 @@ fn plan_dijkstra(maze: &Maze) -> Vec<SolverStep> {
             return steps;
         }
 
+        let tentative = cost + 1;
         for (_, next) in maze.reachable_neighbors(current) {
             let next_index = maze.index(next);
-            let tentative = distance[current_index] + 1;
-
-            if tentative < distance[next_index] {
-                distance[next_index] = tentative;
-                parent[next_index] = Some(current);
-                open.push(next);
+            if settled[next_index] || tentative >= distance[next_index] {
+                continue;
             }
+
+            distance[next_index] = tentative;
+            parent[next_index] = Some(current);
+            open.push(Reverse((tentative, sequence, next)));
+            sequence += 1;
         }
     }
 
@@ -554,5 +567,22 @@ mod tests {
         let steps = plan_wall_follower(&maze);
 
         assert!(matches!(steps.last(), Some(SolverStep::Failed)));
+    }
+
+    #[test]
+    fn dijkstra_and_astar_solve_open_maze() {
+        let mut maze = Maze::new(3, 3);
+        maze.open_all_internal_walls();
+
+        let planners: [fn(&Maze) -> Vec<SolverStep>; 2] = [plan_dijkstra, plan_astar];
+        for planner in planners {
+            let steps = planner(&maze);
+            assert!(
+                steps
+                    .iter()
+                    .any(|step| matches!(step, SolverStep::Solved(_))),
+                "planner should solve a fully connected maze"
+            );
+        }
     }
 }
