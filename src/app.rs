@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{KeyCode, KeyEvent};
 use rand::random;
 
-use crate::config::{Algorithm, Config};
+use crate::config::{Config, GeneratorAlgorithm, SolverAlgorithm};
 use crate::explorer::{ExplorationStatus, Explorer};
 use crate::generator::MazeGenerator;
 use crate::maze::Maze;
@@ -16,6 +16,7 @@ const MIN_HEIGHT: usize = 5;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Phase {
     Generating,
+    Ready,
     Exploring,
     Solved,
     Failed,
@@ -56,8 +57,8 @@ impl App {
         seed: u64,
     ) -> Self {
         let maze = Maze::new(MIN_WIDTH, MIN_HEIGHT);
-        let generator = MazeGenerator::new(&maze, seed);
-        let explorer = Explorer::new(&maze);
+        let generator = MazeGenerator::with_algorithm(&maze, config.generator, seed);
+        let explorer = Explorer::with_algorithm(&maze, config.solver_algorithm());
 
         Self {
             config,
@@ -105,8 +106,12 @@ impl App {
         self.seed
     }
 
-    pub fn algorithm(&self) -> Algorithm {
-        self.config.algorithm
+    pub fn generator_algorithm(&self) -> GeneratorAlgorithm {
+        self.config.generator
+    }
+
+    pub fn solver_algorithm(&self) -> SolverAlgorithm {
+        self.config.solver_algorithm()
     }
 
     pub fn ascii(&self) -> bool {
@@ -124,6 +129,7 @@ impl App {
     pub fn render_phase(&self) -> RenderPhase {
         match self.phase {
             Phase::Generating => RenderPhase::Generating,
+            Phase::Ready => RenderPhase::Ready,
             Phase::Exploring => RenderPhase::Exploring,
             Phase::Solved => RenderPhase::Solved,
             Phase::Failed => RenderPhase::Failed,
@@ -155,10 +161,21 @@ impl App {
             Phase::Generating => {
                 self.generator.step(&mut self.maze);
                 if self.generator.is_done() {
-                    self.explorer = Explorer::new(&self.maze);
-                    self.phase = Phase::Exploring;
-                    self.message = "Generation complete. Exploring from S to E.".to_string();
+                    self.explorer =
+                        Explorer::with_algorithm(&self.maze, self.config.solver_algorithm());
+                    if self.config.auto_start {
+                        self.begin_exploration();
+                    } else {
+                        self.phase = Phase::Ready;
+                        self.paused = true;
+                        self.message =
+                            "Generation complete. Press Space to start exploring.".to_string();
+                    }
                 }
+            }
+            Phase::Ready => {
+                self.begin_exploration();
+                self.step_once();
             }
             Phase::Exploring => {
                 self.explorer.step(&self.maze);
@@ -182,12 +199,16 @@ impl App {
         match key.code {
             KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => return true,
             KeyCode::Char(' ') => {
-                self.paused = !self.paused;
-                self.message = if self.paused {
-                    "Paused. Press Space to continue or S to step.".to_string()
+                if self.phase == Phase::Ready {
+                    self.begin_exploration();
                 } else {
-                    "Running.".to_string()
-                };
+                    self.paused = !self.paused;
+                    self.message = if self.paused {
+                        "Paused. Press Space to continue or S to step.".to_string()
+                    } else {
+                        "Running.".to_string()
+                    };
+                }
             }
             KeyCode::Char('s') | KeyCode::Char('S') => {
                 self.step_once();
@@ -199,11 +220,16 @@ impl App {
             KeyCode::Char('+') | KeyCode::Char('=') => self.adjust_speed(10),
             KeyCode::Char('-') | KeyCode::Char('_') => self.adjust_speed(-10),
             KeyCode::Char('1') => {
-                self.config.algorithm = Algorithm::Dfs;
-                self.message = "Using DFS exploration.".to_string();
+                self.set_solver(SolverAlgorithm::Dfs);
             }
             KeyCode::Char('2') => {
-                self.message = "BFS is planned, but this build supports DFS only.".to_string();
+                self.set_solver(SolverAlgorithm::Bfs);
+            }
+            KeyCode::Char('3') => {
+                self.set_solver(SolverAlgorithm::Astar);
+            }
+            KeyCode::Char('4') => {
+                self.set_solver(SolverAlgorithm::DeadEnd);
             }
             _ => {}
         }
@@ -229,14 +255,19 @@ impl App {
         let (width, height) = self.next_maze_dimensions();
         self.seed = self.next_seed();
         self.maze = Maze::new(width, height);
-        self.generator = MazeGenerator::new(&self.maze, self.seed);
-        self.explorer = Explorer::new(&self.maze);
+        self.generator =
+            MazeGenerator::with_algorithm(&self.maze, self.config.generator, self.seed);
+        self.explorer = Explorer::with_algorithm(&self.maze, self.config.solver_algorithm());
         self.phase = Phase::Generating;
         self.paused = false;
         self.fits = self.current_maze_fits();
         self.last_step = Instant::now();
         self.message = if self.fits {
-            format!("Generating maze with seed {}.", self.seed)
+            format!(
+                "Generating {} maze with seed {}.",
+                self.config.generator.label(),
+                self.seed
+            )
         } else {
             "Maze does not fit. Enlarge the terminal or use smaller dimensions.".to_string()
         };
@@ -248,16 +279,44 @@ impl App {
             return;
         }
 
-        self.explorer = Explorer::new(&self.maze);
-        self.phase = Phase::Exploring;
-        self.paused = false;
-        self.message = "Restarted exploration on the current maze.".to_string();
+        self.explorer = Explorer::with_algorithm(&self.maze, self.config.solver_algorithm());
+        if self.config.auto_start {
+            self.begin_exploration();
+        } else {
+            self.phase = Phase::Ready;
+            self.paused = true;
+            self.message = "Exploration reset. Press Space to start.".to_string();
+        }
     }
 
     fn adjust_speed(&mut self, delta: i64) {
         let next = (self.speed as i64 + delta).clamp(1, 240);
         self.speed = next as u64;
         self.message = format!("Speed: {} steps/sec.", self.speed);
+    }
+
+    fn begin_exploration(&mut self) {
+        self.phase = Phase::Exploring;
+        self.paused = false;
+        self.message = format!(
+            "Exploring with {}. Press Space to pause.",
+            self.config.solver_algorithm().label()
+        );
+    }
+
+    fn set_solver(&mut self, solver: SolverAlgorithm) {
+        self.config.solver = solver;
+        self.config.algorithm = None;
+
+        if matches!(self.phase, Phase::Generating) {
+            self.message = format!("Solver set to {}.", solver.label());
+            return;
+        }
+
+        self.explorer = Explorer::with_algorithm(&self.maze, solver);
+        self.phase = Phase::Ready;
+        self.paused = true;
+        self.message = format!("Solver set to {}. Press Space to start.", solver.label());
     }
 
     fn next_seed(&mut self) -> u64 {

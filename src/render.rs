@@ -5,6 +5,7 @@ use crate::maze::{Direction, Maze, Pos};
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum RenderPhase {
     Generating,
+    Ready,
     Exploring,
     Solved,
     Failed,
@@ -94,6 +95,7 @@ fn draw_marks(
         RenderPhase::Generating => {
             put_cell(canvas, generator.current(), if ascii { '@' } else { '○' });
         }
+        RenderPhase::Ready => {}
         RenderPhase::Exploring | RenderPhase::Solved | RenderPhase::Failed => {
             for row in 0..maze.height() {
                 for col in 0..maze.width() {

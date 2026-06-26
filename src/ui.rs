@@ -71,14 +71,20 @@ fn centered_maze_lines(
 fn draw_status(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
     let phase = match app.phase() {
         Phase::Generating => "Generating",
+        Phase::Ready => "Ready",
         Phase::Exploring => "Exploring",
         Phase::Solved => "Solved",
         Phase::Failed => "Failed",
     };
-    let paused = if app.paused() { "Paused" } else { "Running" };
-    let algorithm = format!("{:?}", app.algorithm()).to_uppercase();
+    let activity = match app.phase() {
+        Phase::Ready => "Waiting",
+        Phase::Solved => "Done",
+        Phase::Failed => "Stopped",
+        _ if app.paused() => "Paused",
+        _ => "Running",
+    };
     let steps = match app.phase() {
-        Phase::Generating => app.generator().step_count(),
+        Phase::Generating | Phase::Ready => app.generator().step_count(),
         Phase::Exploring | Phase::Solved | Phase::Failed => app.explorer().step_count(),
     };
 
@@ -86,8 +92,11 @@ fn draw_status(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
         Span::styled("Phase: ", Style::default().fg(Color::DarkGray)),
         Span::raw(phase),
         Span::raw("    "),
-        Span::styled("Algorithm: ", Style::default().fg(Color::DarkGray)),
-        Span::raw(algorithm),
+        Span::styled("Gen: ", Style::default().fg(Color::DarkGray)),
+        Span::raw(app.generator_algorithm().label()),
+        Span::raw("    "),
+        Span::styled("Solve: ", Style::default().fg(Color::DarkGray)),
+        Span::raw(app.solver_algorithm().label()),
         Span::raw("    "),
         Span::styled("Size: ", Style::default().fg(Color::DarkGray)),
         Span::raw(format!("{}x{}", app.maze().width(), app.maze().height())),
@@ -98,10 +107,11 @@ fn draw_status(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
         Span::styled("Speed: ", Style::default().fg(Color::DarkGray)),
         Span::raw(app.speed().to_string()),
         Span::raw("    "),
-        Span::styled(paused, Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(activity, Style::default().add_modifier(Modifier::BOLD)),
     ]);
 
-    let controls = Line::from("Space pause  S step  N new  R replay  +/- speed  1 DFS  Q quit");
+    let controls =
+        Line::from("Space start/pause  S step  N new  R reset  +/- speed  1-4 solver  Q quit");
     let message = Line::from(app.message().to_string());
 
     frame.render_widget(Paragraph::new(vec![status, controls, message]), area);

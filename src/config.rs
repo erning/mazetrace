@@ -15,9 +15,21 @@ pub struct Config {
     #[arg(long, default_value_t = 60)]
     pub speed: u64,
 
-    /// Exploration algorithm to use.
-    #[arg(long, value_enum, default_value_t = Algorithm::Dfs)]
-    pub algorithm: Algorithm,
+    /// Maze generation algorithm to use.
+    #[arg(long, value_enum, default_value_t = GeneratorAlgorithm::Dfs)]
+    pub generator: GeneratorAlgorithm,
+
+    /// Maze solving algorithm to use.
+    #[arg(long, value_enum, default_value_t = SolverAlgorithm::Dfs)]
+    pub solver: SolverAlgorithm,
+
+    /// Deprecated alias for --solver.
+    #[arg(long, value_enum)]
+    pub algorithm: Option<SolverAlgorithm>,
+
+    /// Start solving immediately after maze generation completes.
+    #[arg(long)]
+    pub auto_start: bool,
 
     /// Render with ASCII characters instead of Unicode line art.
     #[arg(long)]
@@ -29,12 +41,47 @@ pub struct Config {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
-pub enum Algorithm {
+pub enum GeneratorAlgorithm {
     Dfs,
+    Prim,
+    Kruskal,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+pub enum SolverAlgorithm {
+    Dfs,
+    Bfs,
+    Astar,
+    DeadEnd,
+}
+
+impl GeneratorAlgorithm {
+    pub const fn label(self) -> &'static str {
+        match self {
+            GeneratorAlgorithm::Dfs => "DFS",
+            GeneratorAlgorithm::Prim => "Prim",
+            GeneratorAlgorithm::Kruskal => "Kruskal",
+        }
+    }
+}
+
+impl SolverAlgorithm {
+    pub const fn label(self) -> &'static str {
+        match self {
+            SolverAlgorithm::Dfs => "DFS",
+            SolverAlgorithm::Bfs => "BFS",
+            SolverAlgorithm::Astar => "A*",
+            SolverAlgorithm::DeadEnd => "Dead-End",
+        }
+    }
 }
 
 impl Config {
     pub fn normalized_speed(&self) -> u64 {
         self.speed.clamp(1, 240)
+    }
+
+    pub fn solver_algorithm(&self) -> SolverAlgorithm {
+        self.algorithm.unwrap_or(self.solver)
     }
 }
