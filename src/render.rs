@@ -243,6 +243,8 @@ fn path_direction(from: Pos, to: Pos) -> Option<Direction> {
     }
 }
 
+// Keep one arm per connection shape so the path line-art table stays auditable.
+#[allow(clippy::match_same_arms)]
 fn path_connector_char(previous: Option<Direction>, next: Option<Direction>, ascii: bool) -> char {
     let up = matches!(previous, Some(Direction::North)) || matches!(next, Some(Direction::North));
     let right = matches!(previous, Some(Direction::East)) || matches!(next, Some(Direction::East));
@@ -336,6 +338,8 @@ fn connection_right(maze: &Maze, row: usize, col: usize) -> bool {
     }
 }
 
+// Keep one arm per connection shape so the wall line-art table stays auditable.
+#[allow(clippy::fn_params_excessive_bools, clippy::match_same_arms)]
 fn junction_char(up: bool, right: bool, down: bool, left: bool, ascii: bool) -> char {
     if ascii {
         return if up || right || down || left {
