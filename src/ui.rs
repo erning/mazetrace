@@ -5,7 +5,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{App, Phase};
-use crate::render::render_maze;
+use crate::render::{render_maze_cells, RenderCell, RenderKind};
 
 pub fn draw(frame: &mut Frame<'_>, app: &App) {
     let area = frame.area();
@@ -46,7 +46,7 @@ fn centered_maze_lines(
     available_width: usize,
     available_height: usize,
 ) -> Vec<Line<'static>> {
-    let maze_lines = render_maze(
+    let maze_lines = render_maze_cells(
         app.maze(),
         app.generator(),
         app.explorer(),
@@ -61,11 +61,56 @@ fn centered_maze_lines(
     }
 
     for line in maze_lines {
-        let left_padding = available_width.saturating_sub(line.chars().count()) / 2;
-        lines.push(Line::from(format!("{}{}", " ".repeat(left_padding), line)));
+        let left_padding = available_width.saturating_sub(line.len()) / 2;
+        lines.push(styled_maze_line(&line, left_padding));
     }
 
     lines
+}
+
+fn styled_maze_line(cells: &[RenderCell], left_padding: usize) -> Line<'static> {
+    let mut spans = Vec::new();
+    if left_padding > 0 {
+        spans.push(Span::raw(" ".repeat(left_padding)));
+    }
+
+    let mut start = 0;
+    while start < cells.len() {
+        let kind = cells[start].kind;
+        let mut end = start + 1;
+        while end < cells.len() && cells[end].kind == kind {
+            end += 1;
+        }
+
+        let text = cells[start..end]
+            .iter()
+            .map(|cell| cell.ch)
+            .collect::<String>();
+        spans.push(Span::styled(text, maze_style(kind)));
+        start = end;
+    }
+
+    Line::from(spans)
+}
+
+fn maze_style(kind: RenderKind) -> Style {
+    match kind {
+        RenderKind::FinalPath => Style::default()
+            .fg(Color::LightYellow)
+            .add_modifier(Modifier::BOLD),
+        RenderKind::Start | RenderKind::Exit => Style::default()
+            .fg(Color::LightGreen)
+            .add_modifier(Modifier::BOLD),
+        RenderKind::ExplorerCurrent => Style::default()
+            .fg(Color::LightCyan)
+            .add_modifier(Modifier::BOLD),
+        RenderKind::GeneratorCurrent => Style::default()
+            .fg(Color::LightMagenta)
+            .add_modifier(Modifier::BOLD),
+        RenderKind::Explored => Style::default().fg(Color::DarkGray),
+        RenderKind::Wall => Style::default().fg(Color::Gray),
+        RenderKind::Empty => Style::default(),
+    }
 }
 
 fn draw_status(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {

@@ -3,7 +3,7 @@ use mazetrace::config::{Config, GeneratorAlgorithm, SolverAlgorithm};
 use mazetrace::explorer::{ExplorationStatus, Explorer};
 use mazetrace::generator::{GenerationStatus, MazeGenerator};
 use mazetrace::maze::{Direction, Maze, Pos};
-use mazetrace::render::{render_maze, render_size, RenderPhase};
+use mazetrace::render::{render_maze, render_maze_cells, render_size, RenderKind, RenderPhase};
 
 #[test]
 fn carve_between_opens_matching_walls() {
@@ -113,6 +113,27 @@ fn solved_render_uses_double_line_path() {
         .chars()
         .any(|ch| matches!(ch, '═' | '║' | '╔' | '╗' | '╚' | '╝')));
     assert!(!output.contains('◆'));
+}
+
+#[test]
+fn solved_render_marks_final_path_cells() {
+    let mut maze = Maze::new(5, 5);
+    let mut generator = MazeGenerator::new(&maze, 13);
+    while !generator.is_done() {
+        generator.step(&mut maze);
+    }
+
+    let mut explorer = Explorer::new(&maze);
+    while !explorer.is_finished() {
+        explorer.step(&maze);
+    }
+
+    let cells = render_maze_cells(&maze, &generator, &explorer, RenderPhase::Solved, false);
+
+    assert!(cells
+        .iter()
+        .flatten()
+        .any(|cell| cell.kind == RenderKind::FinalPath));
 }
 
 #[test]

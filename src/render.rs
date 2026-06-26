@@ -11,6 +11,30 @@ pub enum RenderPhase {
     Failed,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum RenderKind {
+    Empty,
+    Wall,
+    Start,
+    Exit,
+    GeneratorCurrent,
+    ExplorerCurrent,
+    Explored,
+    FinalPath,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct RenderCell {
+    pub ch: char,
+    pub kind: RenderKind,
+}
+
+impl RenderCell {
+    fn new(ch: char, kind: RenderKind) -> Self {
+        Self { ch, kind }
+    }
+}
+
 pub fn render_size(width: usize, height: usize) -> (usize, usize) {
     (width * 4 + 1, height * 2 + 1)
 }
@@ -22,19 +46,30 @@ pub fn render_maze(
     phase: RenderPhase,
     ascii: bool,
 ) -> Vec<String> {
+    render_maze_cells(maze, generator, explorer, phase, ascii)
+        .into_iter()
+        .map(|line| line.into_iter().map(|cell| cell.ch).collect())
+        .collect()
+}
+
+pub fn render_maze_cells(
+    maze: &Maze,
+    generator: &MazeGenerator,
+    explorer: &Explorer,
+    phase: RenderPhase,
+    ascii: bool,
+) -> Vec<Vec<RenderCell>> {
     let (render_width, render_height) = render_size(maze.width(), maze.height());
-    let mut canvas = vec![vec![' '; render_width]; render_height];
+    let empty = RenderCell::new(' ', RenderKind::Empty);
+    let mut canvas = vec![vec![empty; render_width]; render_height];
 
     draw_walls(maze, &mut canvas, ascii);
     draw_marks(maze, generator, explorer, phase, &mut canvas, ascii);
 
     canvas
-        .into_iter()
-        .map(|line| line.into_iter().collect())
-        .collect()
 }
 
-fn draw_walls(maze: &Maze, canvas: &mut [Vec<char>], ascii: bool) {
+fn draw_walls(maze: &Maze, canvas: &mut [Vec<RenderCell>], ascii: bool) {
     let horizontal = if ascii { '-' } else { '─' };
     let vertical = if ascii { '|' } else { '│' };
 
@@ -46,19 +81,19 @@ fn draw_walls(maze: &Maze, canvas: &mut [Vec<char>], ascii: bool) {
 
             if maze.has_wall(pos, Direction::North) {
                 for dx in 1..=3 {
-                    canvas[y][x + dx] = horizontal;
+                    canvas[y][x + dx] = RenderCell::new(horizontal, RenderKind::Wall);
                 }
             }
             if maze.has_wall(pos, Direction::South) {
                 for dx in 1..=3 {
-                    canvas[y + 2][x + dx] = horizontal;
+                    canvas[y + 2][x + dx] = RenderCell::new(horizontal, RenderKind::Wall);
                 }
             }
             if maze.has_wall(pos, Direction::West) {
-                canvas[y + 1][x] = vertical;
+                canvas[y + 1][x] = RenderCell::new(vertical, RenderKind::Wall);
             }
             if maze.has_wall(pos, Direction::East) {
-                canvas[y + 1][x + 4] = vertical;
+                canvas[y + 1][x + 4] = RenderCell::new(vertical, RenderKind::Wall);
             }
         }
     }
@@ -67,12 +102,15 @@ fn draw_walls(maze: &Maze, canvas: &mut [Vec<char>], ascii: bool) {
         for col in 0..=maze.width() {
             let y = row * 2;
             let x = col * 4;
-            canvas[y][x] = junction_char(
-                connection_up(maze, row, col),
-                connection_right(maze, row, col),
-                connection_down(maze, row, col),
-                connection_left(maze, row, col),
-                ascii,
+            canvas[y][x] = RenderCell::new(
+                junction_char(
+                    connection_up(maze, row, col),
+                    connection_right(maze, row, col),
+                    connection_down(maze, row, col),
+                    connection_left(maze, row, col),
+                    ascii,
+                ),
+                RenderKind::Wall,
             );
         }
     }
@@ -83,17 +121,22 @@ fn draw_marks(
     generator: &MazeGenerator,
     explorer: &Explorer,
     phase: RenderPhase,
-    canvas: &mut [Vec<char>],
+    canvas: &mut [Vec<RenderCell>],
     ascii: bool,
 ) {
     if generator.status() == GenerationStatus::Done {
-        put_cell(canvas, maze.start(), 'S');
-        put_cell(canvas, maze.exit(), 'E');
+        put_cell(canvas, maze.start(), 'S', RenderKind::Start);
+        put_cell(canvas, maze.exit(), 'E', RenderKind::Exit);
     }
 
     match phase {
         RenderPhase::Generating => {
-            put_cell(canvas, generator.current(), if ascii { '@' } else { '○' });
+            put_cell(
+                canvas,
+                generator.current(),
+                if ascii { '@' } else { '○' },
+                RenderKind::GeneratorCurrent,
+            );
         }
         RenderPhase::Ready => {}
         RenderPhase::Exploring | RenderPhase::Solved | RenderPhase::Failed => {
@@ -101,28 +144,38 @@ fn draw_marks(
                 for col in 0..maze.width() {
                     let pos = Pos::new(row, col);
                     if explorer.visited(maze, pos) {
-                        put_cell(canvas, pos, if ascii { '.' } else { '·' });
+                        put_cell(
+                            canvas,
+                            pos,
+                            if ascii { '.' } else { '·' },
+                            RenderKind::Explored,
+                        );
                     }
                 }
             }
 
             draw_final_path(canvas, explorer.final_path(), ascii);
 
-            put_cell(canvas, maze.start(), 'S');
-            put_cell(canvas, maze.exit(), 'E');
+            put_cell(canvas, maze.start(), 'S', RenderKind::Start);
+            put_cell(canvas, maze.exit(), 'E', RenderKind::Exit);
 
             if matches!(phase, RenderPhase::Exploring | RenderPhase::Failed) {
-                put_cell(canvas, explorer.current(), if ascii { '@' } else { '●' });
+                put_cell(
+                    canvas,
+                    explorer.current(),
+                    if ascii { '@' } else { '●' },
+                    RenderKind::ExplorerCurrent,
+                );
             }
         }
     }
 }
 
-fn put_cell(canvas: &mut [Vec<char>], pos: Pos, value: char) {
-    canvas[pos.row * 2 + 1][pos.col * 4 + 2] = value;
+fn put_cell(canvas: &mut [Vec<RenderCell>], pos: Pos, value: char, kind: RenderKind) {
+    canvas[pos.row * 2 + 1][pos.col * 4 + 2] = RenderCell::new(value, kind);
 }
 
-fn draw_final_path(canvas: &mut [Vec<char>], path: &[Pos], ascii: bool) {
+fn draw_final_path(canvas: &mut [Vec<RenderCell>], path: &[Pos], ascii: bool) {
     if path.is_empty() {
         return;
     }
@@ -140,11 +193,16 @@ fn draw_final_path(canvas: &mut [Vec<char>], path: &[Pos], ascii: bool) {
             .get(index + 1)
             .and_then(|next| path_direction(*pos, *next));
 
-        put_cell(canvas, *pos, path_connector_char(previous, next, ascii));
+        put_cell(
+            canvas,
+            *pos,
+            path_connector_char(previous, next, ascii),
+            RenderKind::FinalPath,
+        );
     }
 }
 
-fn draw_path_segment(canvas: &mut [Vec<char>], from: Pos, to: Pos, ascii: bool) {
+fn draw_path_segment(canvas: &mut [Vec<RenderCell>], from: Pos, to: Pos, ascii: bool) {
     let (from_x, from_y) = cell_center(from);
     let (to_x, to_y) = cell_center(to);
 
@@ -154,7 +212,7 @@ fn draw_path_segment(canvas: &mut [Vec<char>], from: Pos, to: Pos, ascii: bool) 
         let end = from_x.max(to_x);
 
         for cell in canvas[from_y].iter_mut().take(end).skip(start) {
-            *cell = horizontal;
+            *cell = RenderCell::new(horizontal, RenderKind::FinalPath);
         }
     } else if from_x == to_x {
         let vertical = if ascii { '|' } else { '║' };
@@ -162,7 +220,7 @@ fn draw_path_segment(canvas: &mut [Vec<char>], from: Pos, to: Pos, ascii: bool) 
         let end = from_y.max(to_y);
 
         for row in canvas.iter_mut().take(end).skip(start) {
-            row[from_x] = vertical;
+            row[from_x] = RenderCell::new(vertical, RenderKind::FinalPath);
         }
     }
 }
