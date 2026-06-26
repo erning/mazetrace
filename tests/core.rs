@@ -229,6 +229,41 @@ fn app_auto_start_moves_from_generation_to_exploring() {
     assert!(!app.paused());
 }
 
+#[test]
+fn solved_path_length_is_exposed_for_every_solver() {
+    // The path length is exposed via solved_path_len() so the UI can render it
+    // prominently; it must be available for long-named solvers like Dijkstra
+    // that previously dropped it from the status bar.
+    for solver in [
+        SolverAlgorithm::Dfs,
+        SolverAlgorithm::Bfs,
+        SolverAlgorithm::Astar,
+        SolverAlgorithm::Dijkstra,
+    ] {
+        let mut app = App::new(
+            test_config(GeneratorAlgorithm::Dfs, solver, None, true),
+            80,
+            30,
+        );
+
+        for _ in 0..10_000 {
+            if matches!(app.phase(), Phase::Solved | Phase::Failed) {
+                break;
+            }
+            app.step_once();
+        }
+
+        assert_eq!(app.phase(), Phase::Solved, "{:?} did not solve", solver);
+        let expected = app.explorer().final_path().len();
+        assert_eq!(
+            app.solved_path_len(),
+            Some(expected),
+            "{:?} did not expose solved path length",
+            solver
+        );
+    }
+}
+
 fn test_config(
     generator: GeneratorAlgorithm,
     solver: SolverAlgorithm,

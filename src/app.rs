@@ -91,6 +91,17 @@ impl App {
         &self.explorer
     }
 
+    /// Length of the solved path, available once exploration finishes. The UI
+    /// renders this prominently on the message line rather than in the status
+    /// bar, so it is not subject to the status bar's field omission.
+    pub fn solved_path_len(&self) -> Option<usize> {
+        if self.phase == Phase::Solved {
+            Some(self.explorer.final_path().len())
+        } else {
+            None
+        }
+    }
+
     pub fn phase(&self) -> Phase {
         self.phase
     }

@@ -10,6 +10,19 @@ use crate::render::{render_maze_cells, RenderCell, RenderKind};
 const STATUS_SEPARATOR: &str = "  ";
 const CONTROLS: &str = "Space start/pause  S step  N new  R reset  +/- speed  1-6 solver  Q quit";
 
+// Field priorities drive which status-bar fields survive a narrow terminal.
+// Higher numbers are kept longer. The solver name and step count carry the
+// data users compare, so they outlast phase/size; speed and generator are the
+// first to be dropped.
+const DEFAULT_PRIORITY: u8 = 50;
+const PRIORITY_SOLVE: u8 = 100;
+const PRIORITY_STEPS: u8 = 95;
+const PRIORITY_PHASE: u8 = 90;
+const PRIORITY_SIZE: u8 = 70;
+const PRIORITY_ACTIVITY: u8 = 60;
+const PRIORITY_GEN: u8 = 45;
+const PRIORITY_SPEED: u8 = 30;
+
 pub fn draw(frame: &mut Frame<'_>, app: &App) {
     let area = frame.area();
     let block = Block::default().title(" MazeTrace ").borders(Borders::ALL);
@@ -139,19 +152,20 @@ fn draw_status(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
 
     let status = status_line(
         &[
-            StatusField::new("Phase: ", phase),
-            StatusField::new("Gen: ", app.generator_algorithm().label()),
-            StatusField::new("Solve: ", app.solver_algorithm().label()),
-            StatusField::new("Size: ", format!("{maze_width}x{maze_height}")),
-            StatusField::new("Steps: ", steps.to_string()),
-            StatusField::new("Speed: ", app.speed().to_string()),
-            StatusField::activity(activity),
+            StatusField::new("Phase: ", phase).priority(PRIORITY_PHASE),
+            StatusField::new("Gen: ", app.generator_algorithm().label()).priority(PRIORITY_GEN),
+            StatusField::new("Solve: ", app.solver_algorithm().label()).priority(PRIORITY_SOLVE),
+            StatusField::new("Size: ", format!("{maze_width}x{maze_height}"))
+                .priority(PRIORITY_SIZE),
+            StatusField::new("Steps: ", steps.to_string()).priority(PRIORITY_STEPS),
+            StatusField::new("Speed: ", app.speed().to_string()).priority(PRIORITY_SPEED),
+            StatusField::activity(activity).priority(PRIORITY_ACTIVITY),
         ],
         usize::from(area.width),
     );
 
     let controls = Line::from(truncate_text(CONTROLS, usize::from(area.width)));
-    let message = Line::from(truncate_text(app.message(), usize::from(area.width)));
+    let message = message_line(app, usize::from(area.width));
 
     frame.render_widget(Paragraph::new(vec![status, controls, message]), area);
 }
@@ -160,6 +174,7 @@ struct StatusField {
     label: &'static str,
     value: String,
     value_style: Style,
+    priority: u8,
 }
 
 impl StatusField {
@@ -168,6 +183,7 @@ impl StatusField {
             label,
             value: value.into(),
             value_style: Style::default(),
+            priority: DEFAULT_PRIORITY,
         }
     }
 
@@ -176,7 +192,15 @@ impl StatusField {
             label: "",
             value: value.into(),
             value_style: Style::default().add_modifier(Modifier::BOLD),
+            priority: DEFAULT_PRIORITY,
         }
+    }
+
+    /// Higher-priority fields survive when the status bar cannot fit every
+    /// field, independent of their position in the line.
+    fn priority(mut self, priority: u8) -> Self {
+        self.priority = priority;
+        self
     }
 
     fn width(&self) -> usize {
@@ -189,10 +213,30 @@ fn status_line(fields: &[StatusField], max_width: usize) -> Line<'static> {
         return Line::from("");
     }
 
+    // Decide which fields to show by priority, not position: while the line
+    // overflows, drop the lowest-priority field so the most informative ones
+    // survive. Among equal priorities the rightmost field drops first, keeping
+    // the left-to-right order of the survivors stable.
+    let mut kept: Vec<usize> = (0..fields.len()).collect();
+    while kept.len() > 1 && rendered_width(fields, &kept) > max_width {
+        let drop = kept
+            .iter()
+            .copied()
+            .min_by(|&a, &b| {
+                fields[a]
+                    .priority
+                    .cmp(&fields[b].priority)
+                    .then_with(|| b.cmp(&a))
+            })
+            .expect("kept has at least two entries");
+        kept.retain(|&index| index != drop);
+    }
+
     let mut spans = Vec::new();
     let mut used_width = 0;
 
-    for field in fields {
+    for &index in &kept {
+        let field = &fields[index];
         let separator_width = if spans.is_empty() {
             0
         } else {
@@ -228,6 +272,43 @@ fn status_line(fields: &[StatusField], max_width: usize) -> Line<'static> {
     Line::from(spans)
 }
 
+fn rendered_width(fields: &[StatusField], kept: &[usize]) -> usize {
+    let field_total: usize = kept.iter().map(|&index| fields[index].width()).sum();
+    field_total + kept.len().saturating_sub(1) * STATUS_SEPARATOR.len()
+}
+
+fn message_line(app: &App, max_width: usize) -> Line<'static> {
+    let base = app.message();
+    match app.solved_path_len() {
+        Some(path_cells) => {
+            let summary = format!("Path: {path_cells} cells");
+            let gap = "  ";
+            let fits = base.chars().count() + gap.len() + summary.chars().count() <= max_width;
+            if fits {
+                Line::from(vec![
+                    Span::raw(base.to_string()),
+                    Span::raw(gap),
+                    Span::styled(summary, prominent_style()),
+                ])
+            } else {
+                // Not enough room for both: lead with the prominent summary.
+                Line::from(Span::styled(
+                    truncate_text(summary, max_width),
+                    prominent_style(),
+                ))
+            }
+        }
+        None => Line::from(truncate_text(base, max_width)),
+    }
+}
+
+fn prominent_style() -> Style {
+    // Match the final-path color so the readout ties to the highlighted route.
+    Style::default()
+        .fg(Color::LightYellow)
+        .add_modifier(Modifier::BOLD)
+}
+
 fn truncate_text(text: impl AsRef<str>, max_width: usize) -> String {
     text.as_ref().chars().take(max_width).collect()
 }
@@ -237,17 +318,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn status_line_omits_fields_that_do_not_fit() {
+    fn status_line_drops_lowest_priority_field_first() {
+        // The FIRST field is low priority and the SECOND is high. Only one
+        // fits, yet the high-priority field must survive even though it is not
+        // first in the line.
         let line = status_line(
             &[
-                StatusField::new("Phase: ", "Generating"),
-                StatusField::new("Generator: ", "Recursive Division"),
+                StatusField::new("Low: ", "x").priority(1),
+                StatusField::new("High: ", "y").priority(9),
             ],
-            18,
+            7,
         );
 
-        assert_eq!(line_width(&line), 17);
-        assert_eq!(line_text(&line), "Phase: Generating");
+        assert_eq!(line_text(&line), "High: y");
+    }
+
+    #[test]
+    fn status_line_breaks_ties_by_dropping_rightmost() {
+        // Equal priority: the rightmost field drops so the survivors keep a
+        // stable left-to-right order.
+        let line = status_line(
+            &[StatusField::new("A: ", "1"), StatusField::new("B: ", "22")],
+            5,
+        );
+
+        assert_eq!(line_text(&line), "A: 1");
     }
 
     #[test]
