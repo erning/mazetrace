@@ -22,7 +22,7 @@ pub enum Phase {
     Failed,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct App {
     config: Config,
     maze: Maze,

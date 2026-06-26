@@ -1,6 +1,6 @@
 use rand::rngs::StdRng;
-use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::seq::{IndexedRandom, SliceRandom};
+use rand::{RngExt, SeedableRng};
 
 use crate::config::GeneratorAlgorithm;
 use crate::maze::{Direction, Maze, Pos};
@@ -31,13 +31,13 @@ pub enum GenerationEvent {
     Done,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct MazeGenerator {
     algorithm: GeneratorAlgorithm,
     state: GeneratorState,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 enum GeneratorState {
     Dfs(DfsGenerator),
     Prim(PrimGenerator),
@@ -146,7 +146,7 @@ impl MazeGenerator {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct DfsGenerator {
     current: Pos,
     stack: Vec<Pos>,
@@ -216,7 +216,7 @@ impl DfsGenerator {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct PrimGenerator {
     current: Pos,
     frontier: Vec<Edge>,
@@ -253,7 +253,7 @@ impl PrimGenerator {
         }
 
         while !self.frontier.is_empty() {
-            let edge_index = self.rng.gen_range(0..self.frontier.len());
+            let edge_index = self.rng.random_range(0..self.frontier.len());
             let edge = self.frontier.swap_remove(edge_index);
 
             if self.visited[maze.index(edge.to)] {
@@ -366,7 +366,7 @@ impl KruskalGenerator {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct AldousBroderGenerator {
     current: Pos,
     visited: Vec<bool>,
@@ -437,7 +437,7 @@ impl AldousBroderGenerator {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct WilsonGenerator {
     current: Pos,
     in_tree: Vec<bool>,
@@ -611,7 +611,7 @@ impl WilsonGenerator {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct RecursiveDivisionGenerator {
     current: Pos,
     regions: Vec<Region>,
@@ -692,7 +692,7 @@ impl RecursiveDivisionGenerator {
             DivisionOrientation::Horizontal
         } else if region.height < region.width {
             DivisionOrientation::Vertical
-        } else if self.rng.gen_bool(0.5) {
+        } else if self.rng.random_bool(0.5) {
             DivisionOrientation::Horizontal
         } else {
             DivisionOrientation::Vertical
@@ -711,8 +711,10 @@ impl RecursiveDivisionGenerator {
 
         let wall_col = self
             .rng
-            .gen_range(region.col + 1..region.col + region.width);
-        let passage_row = self.rng.gen_range(region.row..region.row + region.height);
+            .random_range(region.col + 1..region.col + region.width);
+        let passage_row = self
+            .rng
+            .random_range(region.row..region.row + region.height);
 
         for row in region.row..region.row + region.height {
             if row == passage_row {
@@ -748,8 +750,8 @@ impl RecursiveDivisionGenerator {
 
         let wall_row = self
             .rng
-            .gen_range(region.row + 1..region.row + region.height);
-        let passage_col = self.rng.gen_range(region.col..region.col + region.width);
+            .random_range(region.row + 1..region.row + region.height);
+        let passage_col = self.rng.random_range(region.col..region.col + region.width);
 
         for col in region.col..region.col + region.width {
             if col == passage_col {
