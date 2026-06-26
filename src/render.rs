@@ -104,9 +104,7 @@ fn draw_marks(
                 }
             }
 
-            for pos in explorer.final_path() {
-                put_cell(canvas, *pos, if ascii { '*' } else { '◆' });
-            }
+            draw_final_path(canvas, explorer.final_path(), ascii);
 
             put_cell(canvas, maze.start(), 'S');
             put_cell(canvas, maze.exit(), 'E');
@@ -120,6 +118,102 @@ fn draw_marks(
 
 fn put_cell(canvas: &mut [Vec<char>], pos: Pos, value: char) {
     canvas[pos.row * 2 + 1][pos.col * 4 + 2] = value;
+}
+
+fn draw_final_path(canvas: &mut [Vec<char>], path: &[Pos], ascii: bool) {
+    if path.is_empty() {
+        return;
+    }
+
+    for pair in path.windows(2) {
+        draw_path_segment(canvas, pair[0], pair[1], ascii);
+    }
+
+    for (index, pos) in path.iter().enumerate() {
+        let previous = index
+            .checked_sub(1)
+            .and_then(|previous_index| path.get(previous_index))
+            .and_then(|previous| path_direction(*pos, *previous));
+        let next = path
+            .get(index + 1)
+            .and_then(|next| path_direction(*pos, *next));
+
+        put_cell(canvas, *pos, path_connector_char(previous, next, ascii));
+    }
+}
+
+fn draw_path_segment(canvas: &mut [Vec<char>], from: Pos, to: Pos, ascii: bool) {
+    let (from_x, from_y) = cell_center(from);
+    let (to_x, to_y) = cell_center(to);
+
+    if from_y == to_y {
+        let horizontal = if ascii { '-' } else { '═' };
+        let start = from_x.min(to_x) + 1;
+        let end = from_x.max(to_x);
+
+        for cell in canvas[from_y].iter_mut().take(end).skip(start) {
+            *cell = horizontal;
+        }
+    } else if from_x == to_x {
+        let vertical = if ascii { '|' } else { '║' };
+        let start = from_y.min(to_y) + 1;
+        let end = from_y.max(to_y);
+
+        for row in canvas.iter_mut().take(end).skip(start) {
+            row[from_x] = vertical;
+        }
+    }
+}
+
+fn cell_center(pos: Pos) -> (usize, usize) {
+    (pos.col * 4 + 2, pos.row * 2 + 1)
+}
+
+fn path_direction(from: Pos, to: Pos) -> Option<Direction> {
+    if from.row == to.row && from.col + 1 == to.col {
+        Some(Direction::East)
+    } else if from.row == to.row && to.col + 1 == from.col {
+        Some(Direction::West)
+    } else if from.col == to.col && from.row + 1 == to.row {
+        Some(Direction::South)
+    } else if from.col == to.col && to.row + 1 == from.row {
+        Some(Direction::North)
+    } else {
+        None
+    }
+}
+
+fn path_connector_char(previous: Option<Direction>, next: Option<Direction>, ascii: bool) -> char {
+    let up = matches!(previous, Some(Direction::North)) || matches!(next, Some(Direction::North));
+    let right = matches!(previous, Some(Direction::East)) || matches!(next, Some(Direction::East));
+    let down = matches!(previous, Some(Direction::South)) || matches!(next, Some(Direction::South));
+    let left = matches!(previous, Some(Direction::West)) || matches!(next, Some(Direction::West));
+
+    if ascii {
+        return match (up, right, down, left) {
+            (true, false, true, false) => '|',
+            (false, true, false, true) => '-',
+            _ if up || right || down || left => '+',
+            _ => '*',
+        };
+    }
+
+    match (up, right, down, left) {
+        (false, false, false, false) => '═',
+        (true, false, true, false) => '║',
+        (false, true, false, true) => '═',
+        (false, true, true, false) => '╔',
+        (false, false, true, true) => '╗',
+        (true, true, false, false) => '╚',
+        (true, false, false, true) => '╝',
+        (true, true, true, false) => '╠',
+        (true, false, true, true) => '╣',
+        (false, true, true, true) => '╦',
+        (true, true, false, true) => '╩',
+        (true, true, true, true) => '╬',
+        (true, false, false, false) | (false, false, true, false) => '║',
+        (false, true, false, false) | (false, false, false, true) => '═',
+    }
 }
 
 fn connection_up(maze: &Maze, row: usize, col: usize) -> bool {

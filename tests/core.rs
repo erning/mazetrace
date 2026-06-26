@@ -75,6 +75,28 @@ fn render_outputs_expected_line_count() {
 }
 
 #[test]
+fn solved_render_uses_double_line_path() {
+    let mut maze = Maze::new(5, 5);
+    let mut generator = MazeGenerator::new(&maze, 11);
+    while !generator.is_done() {
+        generator.step(&mut maze);
+    }
+
+    let mut explorer = Explorer::new(&maze);
+    while !explorer.is_finished() {
+        explorer.step(&maze);
+    }
+
+    let lines = render_maze(&maze, &generator, &explorer, RenderPhase::Solved, false);
+    let output = lines.join("\n");
+
+    assert!(output
+        .chars()
+        .any(|ch| matches!(ch, '═' | '║' | '╔' | '╗' | '╚' | '╝')));
+    assert!(!output.contains('◆'));
+}
+
+#[test]
 fn auto_dimensions_keep_minimum_when_terminal_is_tiny() {
     assert_eq!(auto_dimensions(10, 6), (5, 5));
 }
