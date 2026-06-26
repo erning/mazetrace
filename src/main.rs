@@ -22,6 +22,10 @@ fn main() {
 
 fn run() -> io::Result<()> {
     let config = Config::parse();
+    if config.uses_deprecated_algorithm_alias() {
+        eprintln!("mazetrace: --algorithm is deprecated; use --solver instead.");
+    }
+
     let _terminal_session = TerminalSession::enter()?;
 
     let stdout = io::stdout();

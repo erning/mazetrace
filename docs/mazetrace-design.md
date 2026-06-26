@@ -366,9 +366,11 @@ AppState
 | `Generating` | 正在生成迷宫，并展示拆墙过程。 |
 | `Ready` | 迷宫已生成，等待开始探索。 |
 | `Exploring` | 正在探索。 |
-| `Paused` | 动画暂停。 |
 | `Solved` | 已找到出口。 |
 | `Failed` | 未找到出口，理论上完美迷宫不会出现。 |
+
+暂停不作为独立状态值，而是由 `paused` 布尔标志表示。这样生成阶段、探索阶段和
+已完成阶段都可以保留自己的业务状态，同时统一处理暂停、单步和恢复。
 
 ## 14. 屏幕尺寸策略
 
@@ -444,10 +446,12 @@ resize 处理原则：
 | `--speed` | 动画速度，数值越大越快。 |
 | `--generator` | 生成算法，支持 `dfs`、`prim`、`kruskal`、`aldous-broder`、`wilson` 和 `recursive-division`。 |
 | `--solver` | 探索算法，支持 `dfs`、`bfs`、`astar`、`dijkstra`、`dead-end` 和 `wall-follower`。 |
-| `--algorithm` | `--solver` 的兼容别名，后续可移除。 |
 | `--auto-start` | 迷宫生成完成后直接开始探索，不停在 `Ready` 阶段。 |
 | `--ascii` | 使用 ASCII 降级渲染。 |
 | `--seed` | 指定随机种子，便于复现同一张迷宫。 |
+
+旧版 `--algorithm` 仍作为 `--solver` 的隐藏兼容别名保留，命中时打印废弃提示。新文档
+和帮助信息不再展示该参数。
 
 ## 16. 技术路线
 
@@ -487,8 +491,10 @@ mazetrace/
   - explorer.rs    # 探索算法
   - render.rs      # 迷宫到字符画布的转换
   - ui.rs          # ratatui 布局和组件绘制
-  - input.rs       # 键盘输入到应用动作的转换
 ```
+
+键盘输入当前由 `app.rs` 的 `handle_key` 直接更新应用状态。等交互继续变复杂时，可以
+再抽出轻量 `input.rs`，把 `KeyEvent` 转成应用动作枚举。
 
 第一版也应保持基本模块拆分，避免把算法、输入和 ratatui 绘制都堆在 `main.rs` 中。
 

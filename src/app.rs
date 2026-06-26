@@ -175,22 +175,9 @@ impl App {
             }
             Phase::Ready => {
                 self.begin_exploration();
-                self.step_once();
+                self.step_exploration();
             }
-            Phase::Exploring => {
-                self.explorer.step(&self.maze);
-                match self.explorer.status() {
-                    ExplorationStatus::Solved => {
-                        self.phase = Phase::Solved;
-                        self.message = "Solved. Press N for a new maze or R to replay.".to_string();
-                    }
-                    ExplorationStatus::Failed => {
-                        self.phase = Phase::Failed;
-                        self.message = "No path found. Press N for a new maze.".to_string();
-                    }
-                    ExplorationStatus::Running => {}
-                }
-            }
+            Phase::Exploring => self.step_exploration(),
             Phase::Solved | Phase::Failed => {}
         }
     }
@@ -314,6 +301,21 @@ impl App {
             "Exploring with {}. Press Space to pause.",
             self.config.solver_algorithm().label()
         );
+    }
+
+    fn step_exploration(&mut self) {
+        self.explorer.step(&self.maze);
+        match self.explorer.status() {
+            ExplorationStatus::Solved => {
+                self.phase = Phase::Solved;
+                self.message = "Solved. Press N for a new maze or R to replay.".to_string();
+            }
+            ExplorationStatus::Failed => {
+                self.phase = Phase::Failed;
+                self.message = "No path found. Press N for a new maze.".to_string();
+            }
+            ExplorationStatus::Running => {}
+        }
     }
 
     fn set_solver(&mut self, solver: SolverAlgorithm) {

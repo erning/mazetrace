@@ -1,3 +1,4 @@
+use clap::CommandFactory;
 use mazetrace::app::{auto_dimensions, App, Phase};
 use mazetrace::config::{Config, GeneratorAlgorithm, SolverAlgorithm};
 use mazetrace::explorer::{ExplorationStatus, Explorer};
@@ -151,6 +152,14 @@ fn deprecated_algorithm_alias_overrides_solver() {
     );
 
     assert_eq!(config.solver_algorithm(), SolverAlgorithm::Bfs);
+    assert!(config.uses_deprecated_algorithm_alias());
+}
+
+#[test]
+fn deprecated_algorithm_alias_is_hidden_from_help() {
+    let help = Config::command().render_help().to_string();
+
+    assert!(!help.contains("--algorithm"));
 }
 
 #[test]
@@ -170,6 +179,30 @@ fn app_waits_ready_after_generation_without_auto_start() {
 
     assert_eq!(app.phase(), Phase::Ready);
     assert!(app.paused());
+}
+
+#[test]
+fn step_once_from_ready_starts_and_advances_exploration() {
+    let mut app = App::new(
+        test_config(GeneratorAlgorithm::Prim, SolverAlgorithm::Bfs, None, false),
+        80,
+        30,
+    );
+
+    for _ in 0..500 {
+        if app.phase() != Phase::Generating {
+            break;
+        }
+        app.step_once();
+    }
+
+    assert_eq!(app.phase(), Phase::Ready);
+    assert_eq!(app.explorer().step_count(), 0);
+
+    app.step_once();
+
+    assert_eq!(app.phase(), Phase::Exploring);
+    assert_eq!(app.explorer().step_count(), 1);
 }
 
 #[test]

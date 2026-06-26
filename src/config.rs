@@ -24,7 +24,7 @@ pub struct Config {
     pub solver: SolverAlgorithm,
 
     /// Deprecated alias for --solver.
-    #[arg(long, value_enum)]
+    #[arg(long, value_enum, hide = true)]
     pub algorithm: Option<SolverAlgorithm>,
 
     /// Start solving immediately after maze generation completes.
@@ -93,5 +93,9 @@ impl Config {
 
     pub fn solver_algorithm(&self) -> SolverAlgorithm {
         self.algorithm.unwrap_or(self.solver)
+    }
+
+    pub fn uses_deprecated_algorithm_alias(&self) -> bool {
+        self.algorithm.is_some()
     }
 }

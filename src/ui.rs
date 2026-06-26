@@ -1,4 +1,4 @@
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction as LayoutDirection, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
@@ -14,7 +14,7 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
     frame.render_widget(block, area);
 
     let chunks = Layout::default()
-        .direction(Direction::Vertical)
+        .direction(LayoutDirection::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(3)])
         .split(inner);
 
