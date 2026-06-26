@@ -245,5 +245,6 @@ fn test_config(
         auto_start,
         ascii: false,
         seed: Some(1),
+        braid: 0.0,
     }
 }

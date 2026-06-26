@@ -34,6 +34,8 @@ pub enum GenerationEvent {
 #[derive(Debug)]
 pub struct MazeGenerator {
     algorithm: GeneratorAlgorithm,
+    braid_ratio: f64,
+    seed: u64,
     state: GeneratorState,
 }
 
@@ -45,6 +47,7 @@ enum GeneratorState {
     AldousBroder(AldousBroderGenerator),
     Wilson(WilsonGenerator),
     RecursiveDivision(RecursiveDivisionGenerator),
+    Braiding(BraidingGenerator),
 }
 
 impl MazeGenerator {
@@ -53,6 +56,18 @@ impl MazeGenerator {
     }
 
     pub fn with_algorithm(maze: &Maze, algorithm: GeneratorAlgorithm, seed: u64) -> Self {
+        Self::with_braid(maze, algorithm, seed, 0.0)
+    }
+
+    /// Like `with_algorithm`, but after the spanning-tree generator finishes it
+    /// removes dead ends with probability `braid_ratio` to introduce loops.
+    /// A ratio of 0.0 keeps the perfect maze; 1.0 yields a pure braid maze.
+    pub fn with_braid(
+        maze: &Maze,
+        algorithm: GeneratorAlgorithm,
+        seed: u64,
+        braid_ratio: f64,
+    ) -> Self {
         let state = match algorithm {
             GeneratorAlgorithm::Dfs => GeneratorState::Dfs(DfsGenerator::new(maze, seed)),
             GeneratorAlgorithm::Prim => GeneratorState::Prim(PrimGenerator::new(maze, seed)),
@@ -68,7 +83,16 @@ impl MazeGenerator {
             }
         };
 
-        Self { algorithm, state }
+        Self {
+            algorithm,
+            braid_ratio: braid_ratio.clamp(0.0, 1.0),
+            seed,
+            state,
+        }
+    }
+
+    pub fn braid_ratio(&self) -> f64 {
+        self.braid_ratio
     }
 
     pub fn algorithm(&self) -> GeneratorAlgorithm {
@@ -83,6 +107,7 @@ impl MazeGenerator {
             GeneratorState::AldousBroder(state) => state.current,
             GeneratorState::Wilson(state) => state.current,
             GeneratorState::RecursiveDivision(state) => state.current,
+            GeneratorState::Braiding(state) => state.current,
         }
     }
 
@@ -94,6 +119,7 @@ impl MazeGenerator {
             GeneratorState::AldousBroder(state) => state.step_count,
             GeneratorState::Wilson(state) => state.step_count,
             GeneratorState::RecursiveDivision(state) => state.step_count,
+            GeneratorState::Braiding(state) => state.step_count,
         }
     }
 
@@ -105,6 +131,7 @@ impl MazeGenerator {
             GeneratorState::AldousBroder(state) => state.status,
             GeneratorState::Wilson(state) => state.status,
             GeneratorState::RecursiveDivision(state) => state.status,
+            GeneratorState::Braiding(state) => state.status,
         }
     }
 
@@ -120,6 +147,7 @@ impl MazeGenerator {
             GeneratorState::AldousBroder(state) => state.last_event,
             GeneratorState::Wilson(state) => state.last_event,
             GeneratorState::RecursiveDivision(state) => state.last_event,
+            GeneratorState::Braiding(state) => state.last_event,
         }
     }
 
@@ -131,17 +159,37 @@ impl MazeGenerator {
             GeneratorState::AldousBroder(state) => state.visited[maze.index(pos)],
             GeneratorState::Wilson(state) => state.in_tree[maze.index(pos)],
             GeneratorState::RecursiveDivision(state) => state.touched[maze.index(pos)],
+            // The whole maze is already carved while braiding runs.
+            GeneratorState::Braiding(_) => true,
         }
     }
 
     pub fn step(&mut self, maze: &mut Maze) -> GenerationEvent {
-        match &mut self.state {
-            GeneratorState::Dfs(state) => state.step(maze),
-            GeneratorState::Prim(state) => state.step(maze),
-            GeneratorState::Kruskal(state) => state.step(maze),
-            GeneratorState::AldousBroder(state) => state.step(maze),
-            GeneratorState::Wilson(state) => state.step(maze),
-            GeneratorState::RecursiveDivision(state) => state.step(maze),
+        loop {
+            let event = match &mut self.state {
+                GeneratorState::Braiding(state) => return state.step(maze),
+                GeneratorState::Dfs(state) => state.step(maze),
+                GeneratorState::Prim(state) => state.step(maze),
+                GeneratorState::Kruskal(state) => state.step(maze),
+                GeneratorState::AldousBroder(state) => state.step(maze),
+                GeneratorState::Wilson(state) => state.step(maze),
+                GeneratorState::RecursiveDivision(state) => state.step(maze),
+            };
+
+            // Once the spanning-tree generator finishes, optionally hand control
+            // to the braiding pass, which knocks out walls to introduce loops.
+            // braid_ratio == 0 keeps the previous behavior (a perfect maze).
+            if event == GenerationEvent::Done && self.braid_ratio > 0.0 {
+                let braid_seed = self.seed.wrapping_add(BRAID_SEED_OFFSET);
+                self.state = GeneratorState::Braiding(BraidingGenerator::new(
+                    maze,
+                    self.braid_ratio,
+                    braid_seed,
+                ));
+                continue;
+            }
+
+            return event;
         }
     }
 }
@@ -857,6 +905,98 @@ impl DisjointSet {
     }
 }
 
+/// Golden-ratio offset so the braiding RNG stream stays independent of the
+/// spanning-tree generator that consumed the base seed.
+const BRAID_SEED_OFFSET: u64 = 0x9E37_79B9_7F4A_7C15;
+
+/// Post-processing pass that turns a perfect maze into a braid maze. For each
+/// remaining dead end it removes one wall with probability `braid_ratio`,
+/// creating a loop. Removing every dead end (ratio 1.0) yields a pure braid
+/// maze; ratio 0.0 leaves the perfect maze untouched.
+#[derive(Debug)]
+struct BraidingGenerator {
+    candidates: Vec<Pos>,
+    index: usize,
+    current: Pos,
+    step_count: usize,
+    status: GenerationStatus,
+    last_event: GenerationEvent,
+    braid_ratio: f64,
+    rng: StdRng,
+}
+
+impl BraidingGenerator {
+    fn new(maze: &Maze, braid_ratio: f64, seed: u64) -> Self {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut candidates: Vec<Pos> = (0..maze.height())
+            .flat_map(|row| (0..maze.width()).map(move |col| Pos::new(row, col)))
+            .filter(|&pos| !is_terminus(maze, pos) && is_dead_end(maze, pos))
+            .collect();
+        candidates.shuffle(&mut rng);
+
+        Self {
+            candidates,
+            index: 0,
+            current: maze.start(),
+            step_count: 0,
+            status: GenerationStatus::Running,
+            last_event: GenerationEvent::Visit(maze.start()),
+            braid_ratio,
+            rng,
+        }
+    }
+
+    fn step(&mut self, maze: &mut Maze) -> GenerationEvent {
+        if self.status == GenerationStatus::Done {
+            return GenerationEvent::Done;
+        }
+
+        while self.index < self.candidates.len() {
+            let pos = self.candidates[self.index];
+            self.index += 1;
+
+            // A previous braid may have already grown this cell past a dead end,
+            // or it may sit on the entrance/exit; skip without emitting an event.
+            if is_terminus(maze, pos) || !is_dead_end(maze, pos) {
+                continue;
+            }
+
+            if !self.rng.random_bool(self.braid_ratio) {
+                continue;
+            }
+
+            let walls: Vec<(Direction, Pos)> = maze
+                .neighbors(pos)
+                .filter(|(direction, _)| maze.has_wall(pos, *direction))
+                .collect();
+            let Some((direction, next)) = walls.choose(&mut self.rng).copied() else {
+                continue;
+            };
+
+            maze.carve_between(pos, next);
+            self.current = next;
+            self.step_count += 1;
+            self.last_event = GenerationEvent::Carve {
+                from: pos,
+                to: next,
+                direction,
+            };
+            return self.last_event;
+        }
+
+        finish_generation(maze, &mut self.status, &mut self.last_event);
+        self.last_event
+    }
+}
+
+fn is_dead_end(maze: &Maze, pos: Pos) -> bool {
+    maze.reachable_neighbors(pos).count() == 1
+}
+
+fn is_terminus(maze: &Maze, pos: Pos) -> bool {
+    pos == maze.start() || pos == maze.exit()
+}
+
 fn finish_generation(
     maze: &mut Maze,
     status: &mut GenerationStatus,
@@ -884,5 +1024,62 @@ mod tests {
         assert_eq!(disjoint_set.find(1), root);
         assert_eq!(disjoint_set.find(2), root);
         assert_eq!(disjoint_set.find(3), root);
+    }
+
+    fn run_to_done(maze: &mut Maze, algorithm: GeneratorAlgorithm, braid_ratio: f64) {
+        let mut generator = MazeGenerator::with_braid(maze, algorithm, 7, braid_ratio);
+        for _ in 0..(maze.len() * 4) {
+            if generator.is_done() {
+                break;
+            }
+            generator.step(maze);
+        }
+        assert!(generator.is_done());
+    }
+
+    fn internal_passages(maze: &Maze) -> usize {
+        let mut count = 0;
+        for row in 0..maze.height() {
+            for col in 0..maze.width() {
+                let pos = Pos::new(row, col);
+                for direction in [Direction::East, Direction::South] {
+                    if maze.neighbor(pos, direction).is_some() && !maze.has_wall(pos, direction) {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        count
+    }
+
+    #[test]
+    fn zero_braid_keeps_perfect_maze() {
+        let mut maze = Maze::new(8, 6);
+        run_to_done(&mut maze, GeneratorAlgorithm::Dfs, 0.0);
+
+        // A perfect maze on N cells has exactly N-1 internal passages and no
+        // cycles, so braiding at ratio 0 must leave it untouched.
+        assert_eq!(internal_passages(&maze), maze.len() - 1);
+    }
+
+    #[test]
+    fn full_braid_adds_cycles_and_kills_dead_ends() {
+        let mut maze = Maze::new(10, 8);
+        run_to_done(&mut maze, GeneratorAlgorithm::Prim, 1.0);
+
+        // Ratio 1.0 removes every dead end, so every non-entrance/exit cell has
+        // at least two open passages, and the cycle count (edges - nodes + 1)
+        // is strictly positive.
+        assert!(internal_passages(&maze) > maze.len() - 1);
+
+        for row in 0..maze.height() {
+            for col in 0..maze.width() {
+                let pos = Pos::new(row, col);
+                if pos == maze.start() || pos == maze.exit() {
+                    continue;
+                }
+                assert!(!is_dead_end(&maze, pos), "dead end remains at {pos:?}");
+            }
+        }
     }
 }

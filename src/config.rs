@@ -38,6 +38,11 @@ pub struct Config {
     /// Random seed used for maze generation.
     #[arg(long)]
     pub seed: Option<u64>,
+
+    /// Braid ratio in [0, 1]. 0 keeps a perfect maze with a single solution;
+    /// higher values remove more dead ends to add loops and alternate routes.
+    #[arg(long, default_value_t = 0.0)]
+    pub braid: f64,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -89,6 +94,10 @@ impl SolverAlgorithm {
 impl Config {
     pub fn normalized_speed(&self) -> u64 {
         self.speed.clamp(1, 240)
+    }
+
+    pub fn braid_ratio(&self) -> f64 {
+        self.braid.clamp(0.0, 1.0)
     }
 
     pub fn solver_algorithm(&self) -> SolverAlgorithm {

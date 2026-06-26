@@ -146,5 +146,6 @@ fn test_config_with_speed(speed: u64) -> Config {
         auto_start: false,
         ascii: false,
         seed: Some(1),
+        braid: 0.0,
     }
 }

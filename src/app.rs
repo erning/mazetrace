@@ -57,7 +57,8 @@ impl App {
         seed: u64,
     ) -> Self {
         let maze = Maze::new(MIN_WIDTH, MIN_HEIGHT);
-        let generator = MazeGenerator::with_algorithm(&maze, config.generator, seed);
+        let generator =
+            MazeGenerator::with_braid(&maze, config.generator, seed, config.braid_ratio());
         let explorer = Explorer::with_algorithm(&maze, config.solver_algorithm());
 
         Self {
@@ -168,8 +169,7 @@ impl App {
                     } else {
                         self.phase = Phase::Ready;
                         self.paused = true;
-                        self.message =
-                            "Generation complete. Press Space to start exploring.".to_string();
+                        self.message = self.completion_message();
                     }
                 }
             }
@@ -254,8 +254,12 @@ impl App {
         let (width, height) = self.next_maze_dimensions();
         self.seed = self.next_seed();
         self.maze = Maze::new(width, height);
-        self.generator =
-            MazeGenerator::with_algorithm(&self.maze, self.config.generator, self.seed);
+        self.generator = MazeGenerator::with_braid(
+            &self.maze,
+            self.config.generator,
+            self.seed,
+            self.config.braid_ratio(),
+        );
         self.explorer = Explorer::with_algorithm(&self.maze, self.config.solver_algorithm());
         self.phase = Phase::Generating;
         self.paused = false;
@@ -294,6 +298,35 @@ impl App {
         self.message = format!("Speed: {} steps/sec.", self.speed);
     }
 
+    fn completion_message(&self) -> String {
+        let mut message = String::from("Generation complete. Press Space to start exploring.");
+
+        if self.config.braid_ratio() > 0.0 {
+            message.push_str(&format!(" Braid ratio {:.2}.", self.config.braid_ratio()));
+        }
+
+        if let Some(note) = self.solver_limitation_note() {
+            message.push(' ');
+            message.push_str(note);
+        }
+
+        message
+    }
+
+    fn solver_limitation_note(&self) -> Option<&'static str> {
+        // Dead-end filling assumes a perfect maze (unique solution). Once
+        // braiding adds loops it has nothing to prune and may report no path,
+        // even though one exists. Wall-follower still works because the
+        // entrance and exit both sit on the outer wall.
+        if self.config.braid_ratio() > 0.0
+            && self.config.solver_algorithm() == SolverAlgorithm::DeadEnd
+        {
+            Some("Note: Dead-End filling assumes a perfect maze and may fail here.")
+        } else {
+            None
+        }
+    }
+
     fn begin_exploration(&mut self) {
         self.phase = Phase::Exploring;
         self.paused = false;
@@ -330,7 +363,12 @@ impl App {
         self.explorer = Explorer::with_algorithm(&self.maze, solver);
         self.phase = Phase::Ready;
         self.paused = true;
-        self.message = format!("Solver set to {}. Press Space to start.", solver.label());
+        let mut message = format!("Solver set to {}. Press Space to start.", solver.label());
+        if let Some(note) = self.solver_limitation_note() {
+            message.push(' ');
+            message.push_str(note);
+        }
+        self.message = message;
     }
 
     fn next_seed(&mut self) -> u64 {
