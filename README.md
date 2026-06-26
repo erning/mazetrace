@@ -1,8 +1,13 @@
 # MazeTrace
 
-MazeTrace is an animated terminal maze generator and explorer. It builds a maze
-step by step, waits at the completed maze, then traces a solver route from the
+MazeTrace is a nostalgic terminal project inspired by the early thrill of
+learning programming and watching algorithms come alive. It builds a maze step
+by step, waits at the completed maze, then traces a solver route from the
 entrance to the exit.
+
+## Demo
+
+[![MazeTrace terminal demo][demo]][cast]
 
 ## Run
 
@@ -33,3 +38,6 @@ Useful options:
 - `Q` or `Esc`: quit
 
 See [docs/mazetrace-design.md](docs/mazetrace-design.md) for the full design.
+
+[demo]: https://asciinema.org/a/sBisYhYNsGpr0vGz.svg
+[cast]: https://asciinema.org/a/sBisYhYNsGpr0vGz
