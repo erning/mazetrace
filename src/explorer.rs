@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::config::SolverAlgorithm;
-use crate::maze::{Maze, Pos};
+use crate::maze::{Direction, Maze, Pos};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ExplorationStatus {
@@ -153,7 +153,9 @@ fn plan_steps(maze: &Maze, algorithm: SolverAlgorithm) -> Vec<SolverStep> {
         SolverAlgorithm::Dfs => plan_dfs(maze),
         SolverAlgorithm::Bfs => plan_bfs(maze),
         SolverAlgorithm::Astar => plan_astar(maze),
+        SolverAlgorithm::Dijkstra => plan_dijkstra(maze),
         SolverAlgorithm::DeadEnd => plan_dead_end(maze),
+        SolverAlgorithm::WallFollower => plan_wall_follower(maze),
     }
 }
 
@@ -285,6 +287,51 @@ fn plan_astar(maze: &Maze) -> Vec<SolverStep> {
     steps
 }
 
+fn plan_dijkstra(maze: &Maze) -> Vec<SolverStep> {
+    let mut steps = Vec::new();
+    let mut open = vec![maze.start()];
+    let mut settled = vec![false; maze.len()];
+    let mut distance = vec![usize::MAX; maze.len()];
+    let mut parent = vec![None; maze.len()];
+    distance[maze.index(maze.start())] = 0;
+
+    while !open.is_empty() {
+        let best_index = (0..open.len())
+            .min_by_key(|index| distance[maze.index(open[*index])])
+            .expect("open set is not empty");
+        let current = open.swap_remove(best_index);
+        let current_index = maze.index(current);
+
+        if settled[current_index] {
+            continue;
+        }
+
+        settled[current_index] = true;
+        if current != maze.start() {
+            steps.push(SolverStep::Visit(current));
+        }
+
+        if current == maze.exit() {
+            push_solution(maze, &parent, &mut steps);
+            return steps;
+        }
+
+        for (_, next) in maze.reachable_neighbors(current) {
+            let next_index = maze.index(next);
+            let tentative = distance[current_index] + 1;
+
+            if tentative < distance[next_index] {
+                distance[next_index] = tentative;
+                parent[next_index] = Some(current);
+                open.push(next);
+            }
+        }
+    }
+
+    steps.push(SolverStep::Failed);
+    steps
+}
+
 fn plan_dead_end(maze: &Maze) -> Vec<SolverStep> {
     let mut steps = Vec::new();
     let mut active = vec![true; maze.len()];
@@ -329,6 +376,54 @@ fn plan_dead_end(maze: &Maze) -> Vec<SolverStep> {
     }
 
     steps
+}
+
+fn plan_wall_follower(maze: &Maze) -> Vec<SolverStep> {
+    let mut steps = Vec::new();
+    let mut current = maze.start();
+    let mut facing = Direction::East;
+    let mut trail = vec![current];
+    let mut seen_states = vec![false; maze.len() * 4];
+
+    loop {
+        if current == maze.exit() {
+            steps.push(SolverStep::Solved(simplify_trail(&trail)));
+            return steps;
+        }
+
+        let state_index = maze.index(current) * 4 + direction_index(facing);
+        if seen_states[state_index] {
+            steps.push(SolverStep::Failed);
+            return steps;
+        }
+        seen_states[state_index] = true;
+
+        let choices = [
+            turn_left(facing),
+            facing,
+            turn_right(facing),
+            facing.opposite(),
+        ];
+        let Some((direction, next)) = choices.into_iter().find_map(|direction| {
+            (!maze.has_wall(current, direction))
+                .then(|| {
+                    maze.neighbor(current, direction)
+                        .map(|next| (direction, next))
+                })
+                .flatten()
+        }) else {
+            steps.push(SolverStep::Failed);
+            return steps;
+        };
+
+        steps.push(SolverStep::Move {
+            from: current,
+            to: next,
+        });
+        current = next;
+        facing = direction;
+        trail.push(current);
+    }
 }
 
 fn push_solution(maze: &Maze, parent: &[Option<Pos>], steps: &mut Vec<SolverStep>) {
@@ -390,4 +485,45 @@ fn is_terminal(maze: &Maze, pos: Pos) -> bool {
 
 fn manhattan(left: Pos, right: Pos) -> usize {
     left.row.abs_diff(right.row) + left.col.abs_diff(right.col)
+}
+
+fn simplify_trail(trail: &[Pos]) -> Vec<Pos> {
+    let mut path = Vec::new();
+
+    for pos in trail {
+        if let Some(index) = path.iter().position(|seen| seen == pos) {
+            path.truncate(index + 1);
+        } else {
+            path.push(*pos);
+        }
+    }
+
+    path
+}
+
+const fn turn_left(direction: Direction) -> Direction {
+    match direction {
+        Direction::North => Direction::West,
+        Direction::East => Direction::North,
+        Direction::South => Direction::East,
+        Direction::West => Direction::South,
+    }
+}
+
+const fn turn_right(direction: Direction) -> Direction {
+    match direction {
+        Direction::North => Direction::East,
+        Direction::East => Direction::South,
+        Direction::South => Direction::West,
+        Direction::West => Direction::North,
+    }
+}
+
+const fn direction_index(direction: Direction) -> usize {
+    match direction {
+        Direction::North => 0,
+        Direction::East => 1,
+        Direction::South => 2,
+        Direction::West => 3,
+    }
 }

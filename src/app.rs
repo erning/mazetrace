@@ -229,7 +229,13 @@ impl App {
                 self.set_solver(SolverAlgorithm::Astar);
             }
             KeyCode::Char('4') => {
+                self.set_solver(SolverAlgorithm::Dijkstra);
+            }
+            KeyCode::Char('5') => {
                 self.set_solver(SolverAlgorithm::DeadEnd);
+            }
+            KeyCode::Char('6') => {
+                self.set_solver(SolverAlgorithm::WallFollower);
             }
             _ => {}
         }

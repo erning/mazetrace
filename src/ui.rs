@@ -111,7 +111,7 @@ fn draw_status(frame: &mut Frame<'_>, app: &App, area: ratatui::layout::Rect) {
     ]);
 
     let controls =
-        Line::from("Space start/pause  S step  N new  R reset  +/- speed  1-4 solver  Q quit");
+        Line::from("Space start/pause  S step  N new  R reset  +/- speed  1-6 solver  Q quit");
     let message = Line::from(app.message().to_string());
 
     frame.render_widget(Paragraph::new(vec![status, controls, message]), area);

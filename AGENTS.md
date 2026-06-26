@@ -7,7 +7,7 @@ MazeTrace is a Rust terminal application using `ratatui`. Source code lives in `
 ## Build, Test, and Development Commands
 
 - `cargo run -- --width 21 --height 11`: run MazeTrace locally with explicit maze dimensions.
-- `cargo run -- --generator prim --solver bfs --auto-start`: try alternate algorithms.
+- `cargo run -- --generator recursive-division --solver dijkstra --auto-start`: try alternate algorithms.
 - `cargo test`: run unit and integration tests.
 - `cargo fmt --all`: format Rust code before committing.
 - `cargo clippy --all-targets --all-features`: catch common mistakes and style issues.

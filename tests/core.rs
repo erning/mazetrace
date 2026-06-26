@@ -23,11 +23,13 @@ fn generator_completes_and_opens_entrance_and_exit() {
         GeneratorAlgorithm::Dfs,
         GeneratorAlgorithm::Prim,
         GeneratorAlgorithm::Kruskal,
+        GeneratorAlgorithm::AldousBroder,
+        GeneratorAlgorithm::RecursiveDivision,
     ] {
         let mut maze = Maze::new(6, 5);
         let mut generator = MazeGenerator::with_algorithm(&maze, algorithm, 42);
 
-        for _ in 0..(maze.len() * 10) {
+        for _ in 0..(maze.len() * 500) {
             if generator.status() == GenerationStatus::Done {
                 break;
             }
@@ -46,7 +48,9 @@ fn explorer_solves_generated_maze() {
         SolverAlgorithm::Dfs,
         SolverAlgorithm::Bfs,
         SolverAlgorithm::Astar,
+        SolverAlgorithm::Dijkstra,
         SolverAlgorithm::DeadEnd,
+        SolverAlgorithm::WallFollower,
     ] {
         let mut maze = Maze::new(8, 6);
         let mut generator = MazeGenerator::new(&maze, 7);

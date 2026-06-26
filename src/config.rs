@@ -45,6 +45,8 @@ pub enum GeneratorAlgorithm {
     Dfs,
     Prim,
     Kruskal,
+    AldousBroder,
+    RecursiveDivision,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
@@ -52,7 +54,9 @@ pub enum SolverAlgorithm {
     Dfs,
     Bfs,
     Astar,
+    Dijkstra,
     DeadEnd,
+    WallFollower,
 }
 
 impl GeneratorAlgorithm {
@@ -61,6 +65,8 @@ impl GeneratorAlgorithm {
             GeneratorAlgorithm::Dfs => "DFS",
             GeneratorAlgorithm::Prim => "Prim",
             GeneratorAlgorithm::Kruskal => "Kruskal",
+            GeneratorAlgorithm::AldousBroder => "Aldous-Broder",
+            GeneratorAlgorithm::RecursiveDivision => "Recursive Division",
         }
     }
 }
@@ -71,7 +77,9 @@ impl SolverAlgorithm {
             SolverAlgorithm::Dfs => "DFS",
             SolverAlgorithm::Bfs => "BFS",
             SolverAlgorithm::Astar => "A*",
+            SolverAlgorithm::Dijkstra => "Dijkstra",
             SolverAlgorithm::DeadEnd => "Dead-End",
+            SolverAlgorithm::WallFollower => "Wall-Follower",
         }
     }
 }

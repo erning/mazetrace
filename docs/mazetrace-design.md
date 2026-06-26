@@ -132,7 +132,9 @@ ratatui 支持颜色和样式后，生成阶段可以用高亮样式标出“刚
 | `1` | 使用 DFS 探索 |
 | `2` | 使用 BFS 探索 |
 | `3` | 使用 A* 探索 |
-| `4` | 使用 Dead-End Filling 展示解法 |
+| `4` | 使用 Dijkstra 探索 |
+| `5` | 使用 Dead-End Filling 展示解法 |
+| `6` | 使用 Wall-Follower 探索 |
 | `Q` | 退出程序 |
 
 按键提示应始终显示在底部状态栏中，避免用户忘记如何操作。
@@ -162,7 +164,7 @@ Cell
 
 ## 10. 迷宫生成算法
 
-生成阶段应被设计成可单步推进的状态机，而不是一次性生成完整迷宫。这样用户才能看到“拆墙”的过程，也方便暂停、继续和单步执行。
+生成阶段应被设计成可单步推进的状态机，而不是一次性生成完整迷宫。这样用户才能看到“拆墙”或“立墙”的过程，也方便暂停、继续和单步执行。
 
 当前支持这些生成算法：
 
@@ -171,6 +173,10 @@ Cell
 | DFS 回溯 | `dfs` | 长走廊较多，实现简单，动画像在迷宫里钻洞。 |
 | Prim | `prim` | 从已生成区域向外扩张，分支更均匀。 |
 | Kruskal | `kruskal` | 随机拆墙并合并集合，适合展示连通性建立过程。 |
+| Aldous-Broder | `aldous-broder` | 随机游走直到覆盖所有单元格，理论均匀但动画会更慢、更飘。 |
+| Recursive Division | `recursive-division` | 从开放区域逐步加墙，视觉效果和拆墙算法明显不同。 |
+
+Recursive Division 很适合展示，因为它像在空地上逐步“立墙”，和拆墙算法的观感差异明显。实现时先打开所有内部墙，再逐步加分割墙并为每道墙保留一个通道。
 
 生成器状态包括：
 
@@ -190,6 +196,7 @@ MazeGenerator
 GenerationEvent
 - Visit(cell)
 - Carve(from_cell, to_cell, removed_wall)
+- Wall(from_cell, to_cell, added_wall)
 - Backtrack(from_cell, to_cell)
 - Done
 ```
@@ -210,7 +217,6 @@ DFS 生成流程：
 | 算法 | 特点 |
 | --- | --- |
 | Wilson | 结果更均匀，但实现更复杂。 |
-| Recursive Division | 从空白区域递归加墙，视觉效果和拆墙算法明显不同。 |
 
 ## 11. 探索算法
 
@@ -224,7 +230,9 @@ DFS 生成流程：
 | DFS | `dfs` | 一条路走到底，遇到死路回溯，不保证最短路径。 |
 | BFS | `bfs` | 像水波一样向外扩散，在等权迷宫中能找到最短路径。 |
 | A* | `astar` | 使用曼哈顿距离启发式，更有目标感。 |
+| Dijkstra | `dijkstra` | 按当前最短距离扩展，在等权迷宫中效果接近 BFS。 |
 | Dead-End Filling | `dead-end` | 逐步填掉死路，最后留下入口到出口的路径。 |
+| Wall-Follower | `wall-follower` | 模拟左手扶墙行走，在简单连通迷宫中能走到出口。 |
 
 探索器状态包括：
 
@@ -395,8 +403,8 @@ resize 处理原则：
 --width 21
 --height 11
 --speed 60
---generator dfs
---solver bfs
+--generator recursive-division
+--solver dijkstra
 --auto-start
 --ascii
 --seed 1234
@@ -409,8 +417,8 @@ resize 处理原则：
 | `--width` | 覆盖自动计算的迷宫宽度，单位是单元格。 |
 | `--height` | 覆盖自动计算的迷宫高度，单位是单元格。 |
 | `--speed` | 动画速度，数值越大越快。 |
-| `--generator` | 生成算法，支持 `dfs`、`prim` 和 `kruskal`。 |
-| `--solver` | 探索算法，支持 `dfs`、`bfs`、`astar` 和 `dead-end`。 |
+| `--generator` | 生成算法，支持 `dfs`、`prim`、`kruskal`、`aldous-broder` 和 `recursive-division`。 |
+| `--solver` | 探索算法，支持 `dfs`、`bfs`、`astar`、`dijkstra`、`dead-end` 和 `wall-follower`。 |
 | `--algorithm` | `--solver` 的兼容别名，后续可移除。 |
 | `--auto-start` | 迷宫生成完成后直接开始探索，不停在 `Ready` 阶段。 |
 | `--ascii` | 使用 ASCII 降级渲染。 |
@@ -512,8 +520,8 @@ speed = 60 表示每秒最多执行 60 步
 
 ### 里程碑 4：扩展算法
 
-- 增加 Prim 和 Kruskal 迷宫生成。
-- 增加 BFS、A* 和 Dead-End Filling 探索。
+- 增加 Prim、Kruskal、Aldous-Broder 和 Recursive Division 迷宫生成。
+- 增加 BFS、A*、Dijkstra、Dead-End Filling 和 Wall-Follower 探索。
 - 可在运行前通过命令行参数选择生成算法和探索算法。
 - 可在运行中使用数字键切换探索算法。
 - 在状态栏显示当前生成算法和探索算法。
@@ -535,7 +543,7 @@ speed = 60 表示每秒最多执行 60 步
 
 功能测试：
 
-- 生成器每一步最多只拆除一对相邻单元格之间的共享墙。
+- 生成器每一步最多只改变一对相邻单元格之间的共享墙。
 - 未指定 `--width` 和 `--height` 时，迷宫逻辑尺寸按 Terminal 可用区域自动计算，且渲染结果能完整放入屏幕。
 - 运行时窗口尺寸变化不会改变当前迷宫逻辑尺寸。
 - 迷宫任意尺寸下都能从入口到达出口。
@@ -573,8 +581,8 @@ speed = 60 表示每秒最多执行 60 步
 - 语言：Rust
 - 界面：ratatui 驱动的 Terminal Unicode TUI
 - 默认尺寸：根据 Terminal 最大可用区域自动计算
-- 迷宫生成：可动画展示的 DFS、Prim 和 Kruskal 拆墙过程
-- 迷宫探索：DFS、BFS、A* 和 Dead-End Filling
+- 迷宫生成：可动画展示的 DFS、Prim、Kruskal、Aldous-Broder 和 Recursive Division 过程
+- 迷宫探索：DFS、BFS、A*、Dijkstra、Dead-End Filling 和 Wall-Follower
 - 交互：暂停、单步、调速、重新生成、退出
 - 渲染：Unicode 线框和 ASCII 降级
 

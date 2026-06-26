@@ -145,14 +145,37 @@ impl Maze {
     }
 
     pub fn carve_between(&mut self, from: Pos, to: Pos) -> Option<Direction> {
+        self.set_wall_between(from, to, false)
+    }
+
+    pub fn add_wall_between(&mut self, from: Pos, to: Pos) -> Option<Direction> {
+        self.set_wall_between(from, to, true)
+    }
+
+    pub fn set_wall_between(&mut self, from: Pos, to: Pos, present: bool) -> Option<Direction> {
         let direction = self.direction_between(from, to)?;
         let opposite = direction.opposite();
         let from_idx = self.index(from);
         let to_idx = self.index(to);
 
-        self.cells[from_idx].set_wall(direction, false);
-        self.cells[to_idx].set_wall(opposite, false);
+        self.cells[from_idx].set_wall(direction, present);
+        self.cells[to_idx].set_wall(opposite, present);
         Some(direction)
+    }
+
+    pub fn open_all_internal_walls(&mut self) {
+        for row in 0..self.height {
+            for col in 0..self.width {
+                let pos = Pos::new(row, col);
+
+                if let Some(east) = self.neighbor(pos, Direction::East) {
+                    self.carve_between(pos, east);
+                }
+                if let Some(south) = self.neighbor(pos, Direction::South) {
+                    self.carve_between(pos, south);
+                }
+            }
+        }
     }
 
     pub fn open_entrance_exit(&mut self) {
